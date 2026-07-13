@@ -102,19 +102,20 @@ def create_session(user: User, title: str | None, kb_ids: list[str]) -> ChatSess
     return session
 
 
-def _owned_session(user: User, session_id: str) -> ChatSession:
+def _owned_session(user: User, session_id: str, admin_read: bool = False) -> ChatSession:
     session = ChatSession.query.get(session_id)
     if not session or session.deleted_at is not None:
         raise not_found("The requested conversation was not found.")
-    # Access rules: Chat Users see only their own; Tenant Admins see any
-    # conversation within their own tenant; Super Admins (no tenant) see every
-    # tenant's conversations, matching the platform-wide admin list.
-    can_view = (
+    # Access rules: Chat Users act only on their own; Tenant Admins on any
+    # conversation within their own tenant. Super Admins (no tenant) may *read*
+    # every tenant's conversations (admin_read) to match the platform-wide
+    # conversations list, but are not granted cross-tenant mutation here.
+    can_access = (
         session.user_id == user.id
-        or user.is_super_admin
         or (user.is_tenant_admin and session.tenant_id == user.tenant_id)
+        or (admin_read and user.is_super_admin)
     )
-    if not can_view:
+    if not can_access:
         raise not_found("The requested conversation was not found.")
     return session
 
@@ -155,7 +156,7 @@ def list_tenant_sessions(tenant_id: str | None, page: int, per_page: int, search
 
 
 def get_session_with_messages(user: User, session_id: str) -> dict:
-    session = _owned_session(user, session_id)
+    session = _owned_session(user, session_id, admin_read=True)
     kb_ids = [l.kb_id for l in session.kb_links]
     messages = (
         ChatMessage.query.filter(ChatMessage.chat_session_id == session.id)
