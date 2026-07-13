@@ -29,10 +29,12 @@ def create_app(config: type[Config] | None = None) -> Flask:
     _register_request_hooks(app)
 
     from app.api import register_blueprints
+    from app.commands import register_commands
     from app.middleware.error_handler import register_error_handlers
 
     register_blueprints(app)
     register_error_handlers(app)
+    register_commands(app)
 
     @app.get("/health")
     def health():
@@ -42,35 +44,50 @@ def create_app(config: type[Config] | None = None) -> Flask:
     from app import models  # noqa: F401
 
     if not app.config.get("TESTING"):
-        _warn_if_migrations_pending(app)
+        _prepare_schema_on_boot(app)
 
     return app
 
 
-def _warn_if_migrations_pending(app: Flask) -> None:
-    """Log loudly when the database is not at the latest Alembic revision.
+def _prepare_schema_on_boot(app: Flask) -> None:
+    """Confirm the schema is up to date before the app serves traffic.
 
-    Schema drift (tables created outside `flask db upgrade`, or migrations never
-    applied) surfaces as confusing runtime 500s much later. Warn-only: the app
-    still boots so read paths keep working while the operator upgrades.
+    Three modes, controlled by config (default = warn, safe for multi-worker
+    deploys where each worker must NOT run migrations):
+      * DB_AUTO_UPGRADE  -> run `flask db upgrade` automatically at boot, so a
+                            fresh environment self-heals. Use for single-instance
+                            / dev; avoid with many concurrent workers.
+      * DB_REQUIRE_CURRENT -> refuse to boot when the schema is behind (fail
+                            fast instead of surfacing confusing runtime 500s).
+      * otherwise         -> log a loud warning and boot anyway.
     """
-    try:
-        from alembic.migration import MigrationContext
-        from alembic.script import ScriptDirectory
+    from app import db_init
 
-        with app.app_context():
-            script = ScriptDirectory(str(app.extensions["migrate"].directory))
-            heads = set(script.get_heads())
-            with db.engine.connect() as conn:
-                current = set(MigrationContext.configure(conn).get_current_heads())
-        if current != heads:
-            logging.getLogger(__name__).warning(
-                "DATABASE SCHEMA IS BEHIND: alembic revision %s != head %s. "
-                "Run `flask db upgrade` — missing tables/columns will cause request failures.",
-                sorted(current) or "<none>", sorted(heads),
-            )
+    if app.config.get("DB_AUTO_UPGRADE"):
+        try:
+            db_init.ensure_database_exists(app)
+            db_init.run_migrations(app)
+        except db_init.DatabaseInitError as exc:
+            logging.getLogger(__name__).error("DB_AUTO_UPGRADE failed: %s", exc)
+            raise
+
+    try:
+        is_current, current, heads = db_init.schema_status(app)
     except Exception as exc:  # pragma: no cover - never block boot on this check
         logging.getLogger(__name__).debug("migration check skipped: %s", exc)
+        return
+
+    if is_current:
+        return
+
+    message = (
+        "DATABASE SCHEMA IS BEHIND: alembic revision %s != head %s. "
+        "Run `flask init-db` (or `flask db upgrade`) — missing tables/columns "
+        "will cause request failures." % (sorted(current) or "<none>", sorted(heads))
+    )
+    if app.config.get("DB_REQUIRE_CURRENT"):
+        raise db_init.DatabaseInitError(message)
+    logging.getLogger(__name__).warning(message)
 
 
 def _register_request_hooks(app: Flask) -> None:

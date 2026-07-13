@@ -69,6 +69,11 @@ class Config:
         "pool_size": _int("DB_POOL_SIZE", 10),
         "max_overflow": _int("DB_MAX_OVERFLOW", 20),
     }
+    # Boot-time schema handling (see app._prepare_schema_on_boot):
+    #   DB_AUTO_UPGRADE   -> create-if-missing + run migrations at startup
+    #   DB_REQUIRE_CURRENT-> refuse to boot when the schema is behind head
+    DB_AUTO_UPGRADE = _bool("DB_AUTO_UPGRADE", False)
+    DB_REQUIRE_CURRENT = _bool("DB_REQUIRE_CURRENT", False)
 
     # ── JWT ───────────────────────────────────────────────────
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", SECRET_KEY)
