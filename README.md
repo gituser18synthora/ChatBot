@@ -95,7 +95,19 @@ pip install -r requirements.txt
 cp .env.example .env          # then edit .env with real local values
 ```
 
-### MySQL
+### Database & Redis servers
+
+The app needs a running **MySQL** server and a **Redis** server. It creates its
+own *database* and *schema* for you (next section) — you only need the server and
+a user with the `CREATE` privilege.
+
+```bash
+redis-server        # or: sudo systemctl start redis
+```
+
+Set `MYSQL_*` (or a full `DATABASE_URL`) and `REDIS_*` in `.env`. If the MySQL
+user you configure is not allowed to create databases, create the database once
+by hand and the setup command will simply reuse it:
 
 ```sql
 CREATE DATABASE chatbot CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -103,40 +115,59 @@ CREATE USER 'webuser'@'127.0.0.1' IDENTIFIED BY 'your_local_password';
 GRANT ALL PRIVILEGES ON chatbot.* TO 'webuser'@'127.0.0.1';
 FLUSH PRIVILEGES;
 ```
-Set `MYSQL_*` in `.env` to match (or set a full `DATABASE_URL`).
 
-### Redis
+### Initialize the database — one command
 
-```bash
-redis-server        # or: sudo systemctl start redis
-```
-Set `REDIS_*` in `.env`.
-
-### Database migrations (Flask-Migrate / Alembic)
-
-```bash
-export FLASK_APP=run.py
-flask db upgrade          # applies migrations/ to your MySQL database
-```
-To evolve the schema later: `flask db migrate -m "..."` then `flask db upgrade`.
-
-> **Always use `flask db upgrade` — never `db.create_all()` — against a real
-> database.** Creating tables outside Alembic leaves `alembic_version` behind and
-> the schema half-applied, which surfaces later as confusing 500s (e.g. a missing
-> assignment table making the chat KB list appear empty). The app now logs a
-> loud `DATABASE SCHEMA IS BEHIND` warning at boot whenever the database is not
-> at the latest migration; if you see it, run `flask db upgrade`.
-> `flask db check` reports any remaining model/schema drift.
-
-### Create the first Super Admin (credentials from env — never hardcoded)
+After cloning, set the first Super Admin credentials (read from env — never
+hardcoded) and run the setup command:
 
 ```bash
 export SEED_SUPERADMIN_EMAIL="admin@yourco.com"
 export SEED_SUPERADMIN_PASSWORD="a-strong-password"
-python -m scripts.seed --super-admin
-# optional sample data:
-python -m scripts.seed --sample-tenant
+
+flask --app run.py init-db          # or: python -m scripts.init_db
 ```
+
+`init-db` runs the full bootstrap, and is **safe to run as many times as you
+like**:
+
+1. **Create database if missing** — `CREATE DATABASE IF NOT EXISTS` (skips when
+   it already exists; no-op on SQLite).
+2. **Run all pending migrations** — `alembic upgrade head`, creating every
+   table, primary key, foreign key, unique constraint and index. Already-applied
+   migrations are skipped, so existing tables are never recreated or dropped.
+3. **Verify** the schema is at the latest revision before finishing.
+4. **Seed required default data** — the first Super Admin, inserted only when it
+   does not already exist.
+
+Every step logs its progress (`DB_INIT step=…`), and a connection or migration
+failure aborts with a clear, actionable message and a non-zero exit code.
+
+Useful variants:
+
+```bash
+flask --app run.py init-db --no-seed          # schema only
+flask --app run.py init-db --sample-tenant     # + local-dev sample tenant/KB
+python -m scripts.init_db --sample-tenant      # same, without FLASK_APP set
+
+flask --app run.py seed --super-admin          # (re)run just the Super Admin seed
+flask --app run.py seed --sample-tenant        # local-dev fixtures only
+```
+
+Evolving the schema later still uses Flask-Migrate directly:
+`flask db migrate -m "..."` then `flask db upgrade` (or just re-run `init-db`).
+
+> **Schema always flows through Alembic migrations — never `db.create_all()`
+> against a real database.** Creating tables outside Alembic leaves
+> `alembic_version` behind and the schema half-applied, which surfaces later as
+> confusing 500s. To help catch drift, the app checks the schema at boot:
+> - default — logs a loud `DATABASE SCHEMA IS BEHIND` warning and boots anyway;
+> - `DB_AUTO_UPGRADE=true` — creates-if-missing and runs migrations at startup
+>   (handy for single-instance/dev; avoid with many concurrent workers, where
+>   each worker must not migrate);
+> - `DB_REQUIRE_CURRENT=true` — refuses to boot until the schema is current.
+>
+> `flask db check` reports any remaining model/schema drift.
 
 ### Run the backend
 
