@@ -18,7 +18,7 @@ _request_id: ContextVar[str] = ContextVar("request_id", default="-")
 # Keys we must never let through into logs even if a caller passes them.
 _REDACTED_KEYS = {
     "password", "password_hash", "authorization", "access_token", "refresh_token",
-    "token", "openai_api_key", "api_key", "secret", "jwt", "mysql_password",
+    "token", "openai_api_key", "api_key", "secret", "jwt", "postgres_password",
 }
 
 

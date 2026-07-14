@@ -16,6 +16,12 @@ import type { DocumentItem, KnowledgeBase } from "@/api/types";
 
 const STATUSES = ["", "pending", "uploading", "processing", "completed", "failed"];
 
+// Sentinel for the "New Knowledge Base" choice (upload into a brand-new KB).
+// "" is the neutral "Select Knowledge Base" placeholder; a real id selects an
+// existing KB. Keeping them distinct lets "New Knowledge Base" sit at the end
+// of the dropdown after the existing KBs.
+const NEW_KB = "__new__";
+
 export function DocumentsPage() {
   const toast = useToast();
   const scope = useTenantScope();
@@ -23,6 +29,9 @@ export function DocumentsPage() {
   const [kbs, setKbs] = useState<KnowledgeBase[]>([]);
   const [kbId, setKbId] = useState<string>(params.get("kb") || "");
   const [statusFilter, setStatusFilter] = useState("");
+  const isNewKb = kbId === NEW_KB;
+  // The id of a selected EXISTING KB (empty for the placeholder and New-KB mode).
+  const realKbId = isNewKb ? "" : kbId;
 
   const loadKbs = () => {
     if (!scope.selected) {
@@ -56,13 +65,13 @@ export function DocumentsPage() {
 
   const list = useList<DocumentItem>(
     (page, search) =>
-      kbId
-        ? documentApi.list(kbId, { page, search, status: statusFilter || undefined })
+      realKbId
+        ? documentApi.list(realKbId, { page, search, status: statusFilter || undefined })
         : Promise.resolve({ items: [], meta: { page, per_page: 20, total: 0, pages: 0 } }),
-    [kbId, statusFilter],
+    [realKbId, statusFilter],
   );
 
-  const activeKb = useMemo(() => kbs.find((k) => k.id === kbId), [kbs, kbId]);
+  const activeKb = useMemo(() => kbs.find((k) => k.id === realKbId), [kbs, realKbId]);
   // One document per Knowledge Base. Failed documents don't occupy the slot —
   // e.g. an upload that died because KMRAG was down must not surface the
   // "already contains its document" notice on top of the service error.
@@ -73,8 +82,13 @@ export function DocumentsPage() {
   const kbOccupied =
     (activeKb?.document_count ?? 0) - (activeKb?.failed_count ?? 0) > 0;
   const kbIndexed = (activeKb?.indexed_count ?? 0) > 0;
+  // Uploading is allowed for a New Knowledge Base, or an existing KB that is
+  // active and still empty. The neutral placeholder ("" — nothing chosen) leaves
+  // the drop zone disabled until the user picks New KB or an existing one.
   const uploadDisabled =
-    !scope.selected || (!!kbId && (activeKb?.status === "inactive" || kbOccupied));
+    !scope.selected ||
+    (!kbId && !isNewKb) ||
+    (!!realKbId && (activeKb?.status === "inactive" || kbOccupied));
   const refreshAfterUpload = (nextKbId?: string) => {
     if (nextKbId) {
       setKbId(nextKbId);
@@ -129,19 +143,24 @@ export function DocumentsPage() {
           <Select
             value={kbId}
             onChange={(e) => {
-              setKbId(e.target.value);
-              setParams(e.target.value ? { kb: e.target.value, ...(scope.isSuperAdmin && scope.selected ? { tenant: scope.selected } : {}) } : {});
+              const v = e.target.value;
+              setKbId(v);
+              // Only an existing KB is reflected in the URL; the placeholder and
+              // New-KB modes carry no ?kb param.
+              const isReal = !!v && v !== NEW_KB;
+              setParams(isReal ? { kb: v, ...(scope.isSuperAdmin && scope.selected ? { tenant: scope.selected } : {}) } : {});
             }}
             className="w-full sm:w-56"
           >
-            <option value="">New Knowledge Base</option>
+            <option value="">Select Knowledge Base</option>
             {kbs.map((k) => (
               <option key={k.id} value={k.id}>
                 {k.kb_name}
               </option>
             ))}
+            <option value={NEW_KB}>New Knowledge Base</option>
           </Select>
-          {kbId && (
+          {realKbId && (
             <>
               <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full sm:w-40">
                 {STATUSES.map((s) => (
@@ -165,26 +184,32 @@ export function DocumentsPage() {
           </button>
         </div>
 
-        <UploadZone
+        {scope.selected && !kbId && !isNewKb && (
+              <p className="mb-2 text-xs text-slate-500">
+                Select a Knowledge Base to view its document, or choose <b>New Knowledge Base</b> to
+                upload a new file.
+              </p>
+            )}
+            <UploadZone
               tenantId={scope.selected}
-              kbId={kbId}
+              kbId={realKbId}
               kbName={activeKb?.kb_name || ""}
               onUploaded={refreshAfterUpload}
               disabled={uploadDisabled}
             />
-            {!!kbId && kbIndexed && (
+            {!!realKbId && kbIndexed && (
               <p className="mt-2 text-xs text-amber-600">
                 This Knowledge Base already contains its document — each Knowledge Base holds
                 exactly one. Switch to <b>New Knowledge Base</b> to upload another file, or delete
                 the existing document to replace it.
               </p>
             )}
-            {!!kbId && activeKb?.status === "inactive" && (
+            {!!realKbId && activeKb?.status === "inactive" && (
               <p className="mt-2 text-xs text-amber-600">
                 This knowledge base is inactive. Activate it to upload documents.
               </p>
             )}
-            {!!kbId && activeKb?.status_message && activeKb.status !== "inactive" && (
+            {!!realKbId && activeKb?.status_message && activeKb.status !== "inactive" && (
               <p className={`mt-2 text-xs ${activeKb.status === "failed" ? "text-rose-600" : activeKb.status === "ready" ? "text-emerald-600" : "text-amber-600"}`}>
                 {activeKb.status_message}
               </p>
@@ -196,7 +221,7 @@ export function DocumentsPage() {
               <b className="font-medium text-emerald-600">Indexed</b> once ready, or{" "}
               <b className="font-medium text-rose-600">Failed</b> if ingestion doesn't complete.
             </p>
-            {kbId && (
+            {realKbId && (
               <div className="mt-4">
                 {list.error ? (
                   <ErrorState message={list.error} onRetry={list.reload} />

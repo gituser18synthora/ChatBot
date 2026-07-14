@@ -1,4 +1,4 @@
-"""Usage / cost analytics aggregations from MySQL (source of truth)."""
+"""Usage / cost analytics aggregations from PostgreSQL (source of truth)."""
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta

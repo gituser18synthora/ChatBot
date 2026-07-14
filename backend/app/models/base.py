@@ -1,6 +1,6 @@
 """Shared model plumbing: portable UUID column + timestamp mixin.
 
-Uses CHAR(36) UUID strings so the same models run on MySQL (production) and
+Uses CHAR(36) UUID strings so the same models run on PostgreSQL (production) and
 SQLite (tests) without dialect-specific types.
 """
 from __future__ import annotations
@@ -15,7 +15,7 @@ from app.utils.uuid_utils import new_uuid
 
 
 class GUID(CHAR):
-    """UUID stored as a 36-char string. Portable across MySQL and SQLite."""
+    """UUID stored as a 36-char string. Portable across PostgreSQL and SQLite."""
 
     def __init__(self):
         super().__init__(36)

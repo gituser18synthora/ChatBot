@@ -53,7 +53,7 @@ def get_metadata():
 
 def render_item(type_, obj, autogen_context):
     """Render the custom GUID column type as a portable CHAR(36) so migration
-    files stay self-contained (no app imports) and run on MySQL and SQLite."""
+    files stay self-contained (no app imports) and run on PostgreSQL and SQLite."""
     from app.models.base import GUID
     if type_ == "type" and isinstance(obj, GUID):
         autogen_context.imports.add("import sqlalchemy as sa")

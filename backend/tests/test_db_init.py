@@ -4,17 +4,25 @@ from __future__ import annotations
 from sqlalchemy.engine import make_url
 
 from app import db_init
+from app.config import _build_database_uri
 from app.constants import Role
 from app.models.user import User
 
 
-def test_without_database_strips_db_name_but_keeps_rest():
-    url = make_url("mysql+pymysql://u:p@host:3306/mydb?charset=utf8mb4")
-    stripped = db_init._without_database(url)
-    assert stripped.database is None
-    assert stripped.host == "host"
-    assert stripped.username == "u"
-    assert stripped.query.get("charset") == "utf8mb4"
+def test_build_database_uri_defaults_to_postgres(monkeypatch):
+    for var in ("DATABASE_URL", "POSTGRES_USER", "POSTGRES_PASSWORD",
+                "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DB"):
+        monkeypatch.delenv(var, raising=False)
+    uri = _build_database_uri()
+    url = make_url(uri)
+    assert url.get_backend_name() == "postgresql"
+    assert url.drivername == "postgresql+psycopg"
+    assert url.port == 5432
+
+
+def test_build_database_uri_honors_explicit_url(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:p@db:5432/mine")
+    assert _build_database_uri() == "postgresql+psycopg://u:p@db:5432/mine"
 
 
 def test_ensure_database_exists_is_noop_for_sqlite(app):
@@ -43,13 +51,23 @@ def test_seed_default_data_creates_super_admin_once(app, monkeypatch):
     assert admins[0].tenant_id is None
 
 
-def test_seed_default_data_skips_without_credentials(app, monkeypatch):
+def test_seed_default_data_creates_default_super_admin_without_env(app, monkeypatch):
+    # With no SEED_SUPERADMIN_* configured, a fresh DB must still get a usable
+    # login: the built-in default Super Admin is created (and creating twice
+    # does not duplicate it).
     monkeypatch.delenv("SEED_SUPERADMIN_EMAIL", raising=False)
     monkeypatch.delenv("SEED_SUPERADMIN_PASSWORD", raising=False)
+    monkeypatch.delenv("SEED_SUPERADMIN_NAME", raising=False)
 
-    db_init.seed_default_data(app)  # must not raise
+    db_init.seed_default_data(app)
+    db_init.seed_default_data(app)  # idempotent
 
-    assert User.query.filter_by(role=Role.SUPER_ADMIN).count() == 0
+    admins = User.query.filter_by(role=Role.SUPER_ADMIN).all()
+    assert len(admins) == 1
+    assert admins[0].email == db_init.DEFAULT_SUPERADMIN_EMAIL
+    assert admins[0].tenant_id is None
+    # The default password must actually authenticate.
+    assert admins[0].check_password(db_init.DEFAULT_SUPERADMIN_PASSWORD)
 
 
 def test_verify_schema_current_raises_when_behind(app):

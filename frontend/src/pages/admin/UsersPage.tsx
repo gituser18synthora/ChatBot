@@ -260,8 +260,19 @@ function UserModal({
   const toggleKb = (id: string) =>
     setKbIds((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
+  // A Chat User needs a Knowledge Base to query — block creation for a tenant
+  // that has none yet. (kbs is only loaded for the create-Chat-User case.)
+  const noKbForChatUser =
+    !isEdit && isChatUserRole && !!form.tenant_id && !loadingKbs && kbs.length === 0;
+  const NO_KB_MESSAGE =
+    "A chat user cannot be created because this tenant does not have any Knowledge Base. Please create a Knowledge Base first.";
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (noKbForChatUser) {
+      toast.error(NO_KB_MESSAGE);
+      return;
+    }
     setSaving(true);
     try {
       if (isEdit) {
@@ -304,7 +315,7 @@ function UserModal({
           <button className="btn-secondary" onClick={onClose} disabled={saving}>
             Cancel
           </button>
-          <button className="btn-primary" form="user-form" disabled={saving}>
+          <button className="btn-primary" form="user-form" disabled={saving || noKbForChatUser}>
             {saving && <Spinner className="text-white" />}
             {isEdit ? "Save changes" : "Create user"}
           </button>
@@ -370,9 +381,8 @@ function UserModal({
                 <Spinner /> Loading knowledge bases…
               </div>
             ) : kbs.length === 0 ? (
-              <p className="rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-slate-500">
-                This tenant has no knowledge bases yet. The Chat User will automatically use any
-                tenant knowledge bases created later.
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-700">
+                {NO_KB_MESSAGE}
               </p>
             ) : (
               <>

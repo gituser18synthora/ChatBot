@@ -1,4 +1,4 @@
-"""Knowledge Base metadata CRUD. KMRAG holds the vectors; MySQL holds metadata.
+"""Knowledge Base metadata CRUD. KMRAG holds the vectors; PostgreSQL holds metadata.
 
 kb_id (the KnowledgeBase primary key) is globally unique and is the shared key
 passed to KMRAG on upload/query.
@@ -26,6 +26,22 @@ from app.utils.response_utils import (
 from app.utils.uuid_utils import is_valid_uuid, new_uuid
 
 logger = logging.getLogger(__name__)
+
+
+def tenant_has_kb(tenant_id: str | None) -> bool:
+    """Whether a tenant owns at least one Knowledge Base (any lifecycle status).
+
+    Used to gate chat access and Chat User creation: a Knowledge Base is
+    mandatory before either is allowed. Super Admins have no tenant, so they
+    never have one."""
+    if not tenant_id:
+        return False
+    return (
+        db.session.query(KnowledgeBase.id)
+        .filter(KnowledgeBase.tenant_id == tenant_id)
+        .first()
+        is not None
+    )
 
 
 def _doc_stats(kb_id: str) -> dict[str, int]:

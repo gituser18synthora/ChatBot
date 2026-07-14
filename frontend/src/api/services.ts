@@ -220,6 +220,9 @@ export const documentApi = {
 
 // ── Chat ──────────────────────────────────────────────────────
 export const chatApi = {
+  // Whether the signed-in user's tenant has any Knowledge Base. A KB is
+  // mandatory to open a chat; the UI gates "Open Chat" / "New Chat" on this.
+  availability: () => getData<{ has_knowledge_base: boolean }>(`${V1}/chat/availability`),
   // The KBs the signed-in user may ground a chat in (assignment-scoped).
   knowledgeBases: () => getData<SelectableKb[]>(`${V1}/chat/knowledge-bases`),
   listSessions: (p: ListParams) => getPaginated<ChatSession>(`${V1}/chat/sessions`, p),

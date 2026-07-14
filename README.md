@@ -1,6 +1,6 @@
 # Aurexion Chatbot Platform
 
-A multi-tenant AI chatbot platform. It is a **standalone Flask + MySQL + Redis**
+A multi-tenant AI chatbot platform. It is a **standalone Flask + PostgreSQL + Redis**
 service that uses the existing **`Synthora-AI-dev/kmrag`** service as an internal
 RAG engine over HTTP. It answers general questions with OpenAI and
 document-grounded questions with KMRAG, with full tenant isolation, RBAC, cost
@@ -18,13 +18,13 @@ tracking, and audit logging.
                     ┌──────────────────────────────┐
   Admin Panel  ───► │                              │ ──► OpenAI  (general answers,
   Chat UI      ───► │   Chatbot Flask Backend      │      query classification,
-   (React/TS)       │   (this repo, MySQL + Redis) │      chat titles)
+   (React/TS)       │ (this repo, PostgreSQL+Redis)│      chat titles)
                     │                              │ ──► KMRAG /upload  (async ingest)
                     └──────────────────────────────┘ ──► KMRAG /query   (RAG answer+sources)
 ```
 
 - The **frontend never calls KMRAG**. Only the Flask backend does, over HTTP.
-- **MySQL** is the source of truth for tenants, users, KBs (metadata), documents,
+- **PostgreSQL** is the source of truth for tenants, users, KBs (metadata), documents,
   chats, usage/cost, and audit logs.
 - **Redis** is cache / rate-limit / JWT-revocation only — never source of truth.
 - **KMRAG** owns OCR, parsing, chunking, embeddings, vector storage, retrieval,
@@ -63,7 +63,7 @@ then documents will sit at Processing.
 
 ### Known limitations (imposed by the current KMRAG API — not by this code)
 1. **No vector delete.** KMRAG exposes no delete endpoint, so document deletion
-   is **soft-delete only** in MySQL; the delete API response says so explicitly.
+   is **soft-delete only** in PostgreSQL; the delete API response says so explicitly.
    *Future KMRAG endpoint needed:* delete document/vectors by `kb_id`+file.
 2. **Sources lack `chunk_id`/`document_id`/preview.** KMRAG source rows carry
    `document_name, page_number, section, topic, score`. Those columns exist in
@@ -79,7 +79,7 @@ then documents will sit at Processing.
 ## 2. Prerequisites
 
 - Python 3.11+ (tested on 3.14)
-- MySQL 8+
+- PostgreSQL 13+
 - Redis 6+
 - A running KMRAG service (from `Synthora-AI-dev`) reachable at `KMRAG_BASE_URL`
 - An OpenAI API key
@@ -97,33 +97,34 @@ cp .env.example .env          # then edit .env with real local values
 
 ### Database & Redis servers
 
-The app needs a running **MySQL** server and a **Redis** server. It creates its
-own *database* and *schema* for you (next section) — you only need the server and
-a user with the `CREATE` privilege.
+The app needs a running **PostgreSQL** server and a **Redis** server. It creates
+its own *database* and *schema* for you (next section) — you only need the server
+and a role with the `CREATEDB` privilege.
 
 ```bash
 redis-server        # or: sudo systemctl start redis
 ```
 
-Set `MYSQL_*` (or a full `DATABASE_URL`) and `REDIS_*` in `.env`. If the MySQL
-user you configure is not allowed to create databases, create the database once
-by hand and the setup command will simply reuse it:
+Set `POSTGRES_*` (or a full `DATABASE_URL`) and `REDIS_*` in `.env`. If the
+PostgreSQL role you configure is not allowed to create databases, create the
+database once by hand and the setup command will simply reuse it:
 
 ```sql
-CREATE DATABASE chatbot CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'webuser'@'127.0.0.1' IDENTIFIED BY 'your_local_password';
-GRANT ALL PRIVILEGES ON chatbot.* TO 'webuser'@'127.0.0.1';
-FLUSH PRIVILEGES;
+CREATE USER webuser WITH PASSWORD 'your_local_password';
+CREATE DATABASE chatbot OWNER webuser;
+GRANT ALL PRIVILEGES ON DATABASE chatbot TO webuser;
 ```
 
 ### Initialize the database — one command
 
-After cloning, set the first Super Admin credentials (read from env — never
-hardcoded) and run the setup command:
+After cloning, optionally set the first Super Admin credentials and run the setup
+command. If you skip the credentials, a built-in default Super Admin is created
+so you can log in immediately (**`admin@chatbot.local` / `Admin@123456`** — change
+the password right after your first login):
 
 ```bash
-export SEED_SUPERADMIN_EMAIL="admin@yourco.com"
-export SEED_SUPERADMIN_PASSWORD="a-strong-password"
+export SEED_SUPERADMIN_EMAIL="admin@yourco.com"     # optional
+export SEED_SUPERADMIN_PASSWORD="a-strong-password" # optional
 
 flask --app run.py init-db          # or: python -m scripts.init_db
 ```
@@ -131,14 +132,16 @@ flask --app run.py init-db          # or: python -m scripts.init_db
 `init-db` runs the full bootstrap, and is **safe to run as many times as you
 like**:
 
-1. **Create database if missing** — `CREATE DATABASE IF NOT EXISTS` (skips when
-   it already exists; no-op on SQLite).
+1. **Create database if missing** — checks `pg_database` and issues
+   `CREATE DATABASE` only when absent (skips when it already exists; no-op on SQLite).
 2. **Run all pending migrations** — `alembic upgrade head`, creating every
    table, primary key, foreign key, unique constraint and index. Already-applied
    migrations are skipped, so existing tables are never recreated or dropped.
 3. **Verify** the schema is at the latest revision before finishing.
 4. **Seed required default data** — the first Super Admin, inserted only when it
-   does not already exist.
+   does not already exist (from `SEED_SUPERADMIN_*`, or a built-in default when
+   those are unset). This also runs automatically at startup when
+   `DB_AUTO_UPGRADE=true`, so a fresh database is never left without a login.
 
 Every step logs its progress (`DB_INIT step=…`), and a connection or migration
 failure aborts with a clear, actionable message and a non-zero exit code.
@@ -334,7 +337,7 @@ curl -s localhost:5000/api/v1/chat/sessions/$SID/messages -X POST \
 
 ## 7. User roles & permissions
 
-All users are rows in the MySQL `users` table (`password_hash` via argon2). Role
+All users are rows in the PostgreSQL `users` table (`password_hash` via argon2). Role
 ids are stable; the **`super_admin`** role is presented in the UI as **"Super
 User"**. A Super User has `tenant_id = NULL` (platform-wide). The first one is
 created by the seed script; after that Super Users create more users (any role)
@@ -422,7 +425,7 @@ or user (not self); a Tenant Admin can delete only Chat Users in their own tenan
 
 ### Document deletion (removes vectors from KMRAG)
 
-Deleting a document soft-deletes the record in MySQL (kept for audit/reversibility)
+Deleting a document soft-deletes the record in PostgreSQL (kept for audit/reversibility)
 **and** calls KMRAG `DELETE /kb/{kb_id}/files?tenant_id=&file_name=` (added in
 `kmrag/api/fast.py`, wrapping KMRAG's existing `delete_chunks_by_file`) so its
 chunks/embeddings are removed and it's excluded from retrieval. If KMRAG is

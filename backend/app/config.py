@@ -36,12 +36,12 @@ def _build_database_uri() -> str:
     explicit = os.getenv("DATABASE_URL")
     if explicit:
         return explicit
-    user = os.getenv("MYSQL_USER", "root")
-    password = os.getenv("MYSQL_PASSWORD", "")
-    host = os.getenv("MYSQL_HOST", "127.0.0.1")
-    port = os.getenv("MYSQL_PORT", "3306")
-    database = os.getenv("MYSQL_DATABASE", "chatbot")
-    return f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}?charset=utf8mb4"
+    user = os.getenv("POSTGRES_USER", "postgres")
+    password = os.getenv("POSTGRES_PASSWORD", "")
+    host = os.getenv("POSTGRES_HOST", "127.0.0.1")
+    port = os.getenv("POSTGRES_PORT", "5432")
+    database = os.getenv("POSTGRES_DB", "chatbot")
+    return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{database}"
 
 
 def _parse_model_pricing() -> dict:
@@ -148,7 +148,7 @@ class TestConfig(Config):
     TESTING = True
     ENV = "testing"
     DEBUG = True
-    # In-memory SQLite so tests need no external MySQL. Models avoid MySQL-only types.
+    # In-memory SQLite so tests need no external PostgreSQL. Models avoid dialect-only types.
     SQLALCHEMY_DATABASE_URI = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
     SQLALCHEMY_ENGINE_OPTIONS = {}
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=1)

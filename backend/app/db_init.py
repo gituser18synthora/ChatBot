@@ -4,7 +4,7 @@ This is the single source of truth for turning a *fresh* environment (just
 `git clone` + a running database server) into a ready-to-serve schema. It is
 deliberately **idempotent** — every step is safe to run repeatedly:
 
-    1. ensure_database_exists  -> CREATE DATABASE IF NOT EXISTS (server-level)
+    1. ensure_database_exists  -> create the database if it is missing (server-level)
     2. run_migrations          -> `alembic upgrade head` (tables/constraints/idx)
     3. verify_schema_current   -> confirm the DB is at the latest revision
     4. seed_default_data       -> insert required rows only when absent
@@ -32,6 +32,13 @@ from app.extensions import db
 
 logger = logging.getLogger(__name__)
 
+# Built-in Super Admin used when SEED_SUPERADMIN_* are not provided, so a freshly
+# created database ALWAYS has an account you can log in with. Override via env in
+# any real deployment and change the password immediately after first login.
+DEFAULT_SUPERADMIN_EMAIL = "admin@chatbot.local"
+DEFAULT_SUPERADMIN_PASSWORD = "Admin@123456"
+DEFAULT_SUPERADMIN_NAME = "Super Admin"
+
 
 class DatabaseInitError(RuntimeError):
     """Raised when the database cannot be created, migrated, or verified.
@@ -47,8 +54,8 @@ def ensure_database_exists(app: Flask) -> None:
 
     Alembic/`flask db upgrade` connects to an *existing* database — it cannot
     create the database itself. On a brand-new server that database does not
-    exist yet, so we connect to the server (without selecting a database) and
-    issue `CREATE DATABASE IF NOT EXISTS`. Safe to run repeatedly.
+    exist yet, so we connect to the PostgreSQL maintenance database (`postgres`)
+    and issue `CREATE DATABASE` when it is missing. Safe to run repeatedly.
 
     SQLite (used by the test suite) needs nothing here — the file is created on
     first connect. Unsupported backends are surfaced with a clear error rather
@@ -65,76 +72,27 @@ def ensure_database_exists(app: Flask) -> None:
     if not db_name:
         raise DatabaseInitError(
             "No database name is configured in SQLALCHEMY_DATABASE_URI. "
-            "Set MYSQL_DATABASE (or DATABASE_URL) before initializing."
+            "Set POSTGRES_DB (or DATABASE_URL) before initializing."
         )
 
-    if backend == "mysql":
-        _ensure_mysql_database(url, db_name)
-    elif backend == "postgresql":
+    if backend == "postgresql":
         _ensure_postgres_database(url, db_name)
     else:
         # Unknown backend: don't guess DDL. If the database already exists the
         # later steps still work; otherwise the operator gets a clear message.
         logger.warning(
             "DB_INIT step=ensure_database backend=%s action=skip "
-            "(automatic database creation is only implemented for MySQL/PostgreSQL; "
+            "(automatic database creation is only implemented for PostgreSQL; "
             "create the '%s' database manually if it does not exist)",
             backend, db_name,
         )
 
 
-def _without_database(url):
-    """A copy of `url` with the database cleared.
-
-    `URL.set(database=None)` is a no-op in SQLAlchemy 2.0 (None means "leave
-    unchanged"), so rebuild the URL explicitly to drop the database name.
-    """
-    return url.__class__.create(
-        drivername=url.drivername,
-        username=url.username,
-        password=url.password,
-        host=url.host,
-        port=url.port,
-        database=None,
-        query=url.query,
-    )
-
-
 def _autocommit_engine(url):
     """An AUTOCOMMIT engine for `url` so `CREATE DATABASE` is not trapped inside
-    a transaction. Callers pass a URL that points at the server without the
-    target database (MySQL) or at a maintenance database (PostgreSQL)."""
+    a transaction. The caller passes a URL pointing at the PostgreSQL
+    maintenance database (`postgres`)."""
     return create_engine(url, isolation_level="AUTOCOMMIT", pool_pre_ping=True)
-
-
-def _ensure_mysql_database(url, db_name: str) -> None:
-    logger.info("DB_INIT step=ensure_database backend=mysql database=%s host=%s", db_name, url.host)
-    try:
-        engine = _autocommit_engine(_without_database(url))
-        with engine.connect() as conn:
-            exists = conn.execute(
-                text("SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = :n"),
-                {"n": db_name},
-            ).first()
-            if exists:
-                logger.info("DB_INIT step=ensure_database result=already_exists database=%s", db_name)
-                return
-            # utf8mb4 to match the app's charset (emoji-safe); backtick-quote the
-            # identifier since it cannot be a bound parameter in DDL.
-            conn.execute(text(
-                f"CREATE DATABASE IF NOT EXISTS `{db_name}` "
-                "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-            ))
-        engine.dispose()
-        logger.info("DB_INIT step=ensure_database result=created database=%s", db_name)
-    except OperationalError as exc:
-        raise DatabaseInitError(_connection_help(url, exc)) from exc
-    except SQLAlchemyError as exc:
-        raise DatabaseInitError(
-            f"Failed to create MySQL database '{db_name}': {exc}. "
-            f"Ensure user '{url.username}' has the CREATE privilege, or create the "
-            "database manually and re-run."
-        ) from exc
 
 
 def _ensure_postgres_database(url, db_name: str) -> None:
@@ -165,7 +123,7 @@ def _connection_help(url, exc: Exception) -> str:
     return (
         f"Cannot connect to the database server at {url.host}:{url.port} as "
         f"'{url.username}'. Verify the server is running and the credentials in "
-        f"your environment (MYSQL_HOST/PORT/USER/PASSWORD or DATABASE_URL) are "
+        f"your environment (POSTGRES_HOST/PORT/USER/PASSWORD or DATABASE_URL) are "
         f"correct.\nUnderlying error: {exc}"
     )
 
@@ -230,10 +188,12 @@ def verify_schema_current(app: Flask) -> None:
 def seed_default_data(app: Flask, *, sample_tenant: bool = False) -> None:
     """Insert required default rows that are absent — never duplicates.
 
-    The one *required* default is the first Super Admin, created from
-    SEED_SUPERADMIN_EMAIL / SEED_SUPERADMIN_PASSWORD. When those are not set we
-    log a clear, actionable warning and continue (a fresh clone may not have
-    credentials configured yet) rather than failing the whole bootstrap.
+    The one *required* default is the first Super Admin. It is created from
+    SEED_SUPERADMIN_EMAIL / SEED_SUPERADMIN_PASSWORD when those are set, and
+    otherwise from the built-in DEFAULT_SUPERADMIN_* values so a fresh database
+    always has an account you can log in with. Seeding from defaults logs a loud
+    warning to change the password immediately. Idempotent: an existing account
+    with the same email is left untouched.
     """
     import os
 
@@ -243,16 +203,17 @@ def seed_default_data(app: Flask, *, sample_tenant: bool = False) -> None:
 
     with app.app_context():
         email = (os.getenv("SEED_SUPERADMIN_EMAIL") or "").strip().lower()
-        password = os.getenv("SEED_SUPERADMIN_PASSWORD")
-        name = os.getenv("SEED_SUPERADMIN_NAME", "Super Admin")
+        password = os.getenv("SEED_SUPERADMIN_PASSWORD") or ""
+        name = os.getenv("SEED_SUPERADMIN_NAME") or DEFAULT_SUPERADMIN_NAME
 
-        if not email or not password:
-            logger.warning(
-                "DB_INIT step=seed result=skipped_super_admin reason=missing_credentials "
-                "(set SEED_SUPERADMIN_EMAIL and SEED_SUPERADMIN_PASSWORD, then run "
-                "`flask seed --super-admin`)"
-            )
-        elif User.query.filter_by(email=email).first():
+        # Fall back to built-in defaults so a fresh DB is never left without a
+        # usable login (the whole reason the app couldn't be signed into before).
+        using_defaults = not email or not password
+        if using_defaults:
+            email = email or DEFAULT_SUPERADMIN_EMAIL
+            password = password or DEFAULT_SUPERADMIN_PASSWORD
+
+        if User.query.filter_by(email=email).first():
             logger.info("DB_INIT step=seed result=super_admin_exists email=%s", email)
         else:
             user = User(id=new_uuid(), tenant_id=None, name=name, email=email,
@@ -260,7 +221,14 @@ def seed_default_data(app: Flask, *, sample_tenant: bool = False) -> None:
             user.set_password(password)
             db.session.add(user)
             db.session.commit()
-            logger.info("DB_INIT step=seed result=super_admin_created email=%s", email)
+            if using_defaults:
+                logger.warning(
+                    "DB_INIT step=seed result=super_admin_created_with_DEFAULTS email=%s "
+                    "-- CHANGE THIS PASSWORD IMMEDIATELY, or set SEED_SUPERADMIN_EMAIL "
+                    "and SEED_SUPERADMIN_PASSWORD before first setup.", email,
+                )
+            else:
+                logger.info("DB_INIT step=seed result=super_admin_created email=%s", email)
 
         if sample_tenant:
             _seed_sample_tenant()

@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { chatApi } from "@/api/services";
 import { useAuth } from "@/context/AuthContext";
 import { Icon } from "@/components/ui/Icons";
 import { cn, initials, roleLabel } from "@/lib/utils";
@@ -15,7 +16,6 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: "/admin", label: "Dashboard", icon: Icon.Dashboard },
   { to: "/admin/tenants", label: "Tenants", icon: Icon.Building, roles: ["super_admin"] },
-  { to: "/admin/super-tenant", label: "Super Tenant", icon: Icon.Shield, roles: ["super_admin"] },
   { to: "/admin/knowledge-bases", label: "Knowledge Bases", icon: Icon.Book },
   { to: "/admin/documents", label: "Documents", icon: Icon.Doc },
   { to: "/admin/users", label: "Users", icon: Icon.Users },
@@ -44,6 +44,21 @@ export function AdminLayout() {
   const navigate = useNavigate();
   const [drawer, setDrawer] = useState(false);
   const [menu, setMenu] = useState(false);
+  // Chat requires at least one Knowledge Base. `null` while unknown so we don't
+  // flash the button disabled before the check resolves. Super Admins don't chat.
+  const [chatAllowed, setChatAllowed] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!user || user.role === "super_admin") return;
+    let ok = true;
+    chatApi
+      .availability()
+      .then((r) => ok && setChatAllowed(r.has_knowledge_base))
+      .catch(() => ok && setChatAllowed(null));
+    return () => {
+      ok = false;
+    };
+  }, [user]);
 
   const visible = NAV.filter((n) => !n.roles || (user && n.roles.includes(user.role)));
 
@@ -70,15 +85,31 @@ export function AdminLayout() {
             {n.label}
           </NavLink>
         ))}
-        {/* Chat is tenant-scoped — Super Admins (no tenant) don't have a chat workspace. */}
-        {user?.role !== "super_admin" && (
-          <NavLink
-            to="/chat"
-            className="mt-2 flex items-center gap-3 rounded-lg bg-slate-900 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
-          >
-            <Icon.Chat width={19} height={19} /> Open Chat
-          </NavLink>
-        )}
+        {/* Chat is tenant-scoped — Super Admins (no tenant) don't have a chat workspace.
+            A Knowledge Base is mandatory: disable Open Chat until the tenant has one. */}
+        {user?.role !== "super_admin" &&
+          (chatAllowed === false ? (
+            <div className="mt-2">
+              <div
+                aria-disabled
+                className="flex cursor-not-allowed items-center gap-3 rounded-lg bg-slate-100 px-3 py-2.5 text-sm font-medium text-slate-400"
+                title="Chat cannot be opened because no Knowledge Base is available for this tenant."
+              >
+                <Icon.Chat width={19} height={19} /> Open Chat
+              </div>
+              <p className="mt-1.5 px-1 text-[11px] leading-snug text-slate-400">
+                Chat cannot be opened because no Knowledge Base is available for this tenant. Please
+                create or upload a Knowledge Base first.
+              </p>
+            </div>
+          ) : (
+            <NavLink
+              to="/chat"
+              className="mt-2 flex items-center gap-3 rounded-lg bg-slate-900 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
+            >
+              <Icon.Chat width={19} height={19} /> Open Chat
+            </NavLink>
+          ))}
       </nav>
     </div>
   );

@@ -38,6 +38,12 @@ export function ChatPage() {
   const [drawer, setDrawer] = useState(false);
   const [menu, setMenu] = useState(false);
   const [changingPw, setChangingPw] = useState(false);
+  // A Knowledge Base is mandatory to chat. `null` while unknown; `false` blocks
+  // starting a chat and shows the guidance message.
+  const [chatAllowed, setChatAllowed] = useState<boolean | null>(null);
+
+  const NO_KB_MESSAGE =
+    "Chat cannot be opened because no Knowledge Base is available for this tenant. Please create or upload a Knowledge Base first.";
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -57,6 +63,10 @@ export function ChatPage() {
   };
   useEffect(() => {
     loadSessions();
+    chatApi
+      .availability()
+      .then((r) => setChatAllowed(r.has_knowledge_base))
+      .catch(() => setChatAllowed(null));
   }, []);
 
   // Load active session detail.
@@ -126,6 +136,10 @@ export function ChatPage() {
   // optionally pin the chat to specific KBs.
   const [creatingChat, setCreatingChat] = useState(false);
   const startNewChat = async () => {
+    if (chatAllowed === false) {
+      toast.error(NO_KB_MESSAGE);
+      return;
+    }
     if (user?.role !== "chat_user") {
       setNewChat(true);
       return;
@@ -254,7 +268,12 @@ export function ChatPage() {
         <span className="font-bold text-slate-900">Aurexion Chat</span>
       </div>
       <div className="px-3">
-        <button className="btn-primary w-full" onClick={startNewChat} disabled={creatingChat}>
+        <button
+          className="btn-primary w-full"
+          onClick={startNewChat}
+          disabled={creatingChat || chatAllowed === false}
+          title={chatAllowed === false ? NO_KB_MESSAGE : undefined}
+        >
           {creatingChat ? <Spinner className="text-white" /> : <Icon.Plus width={16} height={16} />} New Chat
         </button>
       </div>
@@ -429,20 +448,28 @@ export function ChatPage() {
           <div className="mx-auto max-w-3xl">
             {!activeId ? (
               <div className="flex h-full items-center justify-center py-20">
-                <EmptyState
-                  icon={<Icon.Chat />}
-                  title="Start a conversation"
-                  description={
-                    user?.role === "chat_user"
-                      ? "Start a new chat and ask a question. Your Knowledge Bases are used automatically."
-                      : "Create a new chat and ask a question. Select knowledge bases to get answers grounded in your documents."
-                  }
-                  action={
-                    <button className="btn-primary" onClick={startNewChat} disabled={creatingChat}>
-                      {creatingChat ? <Spinner className="text-white" /> : <Icon.Plus width={16} height={16} />} New Chat
-                    </button>
-                  }
-                />
+                {chatAllowed === false ? (
+                  <EmptyState
+                    icon={<Icon.Book />}
+                    title="No Knowledge Base available"
+                    description={NO_KB_MESSAGE}
+                  />
+                ) : (
+                  <EmptyState
+                    icon={<Icon.Chat />}
+                    title="Start a conversation"
+                    description={
+                      user?.role === "chat_user"
+                        ? "Start a new chat and ask a question. Your Knowledge Bases are used automatically."
+                        : "Create a new chat and ask a question. Select knowledge bases to get answers grounded in your documents."
+                    }
+                    action={
+                      <button className="btn-primary" onClick={startNewChat} disabled={creatingChat}>
+                        {creatingChat ? <Spinner className="text-white" /> : <Icon.Plus width={16} height={16} />} New Chat
+                      </button>
+                    }
+                  />
+                )}
               </div>
             ) : loadingActive ? (
               <LoadingBlock label="Loading conversation…" />
