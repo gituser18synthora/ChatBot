@@ -1,10 +1,10 @@
 """Database bootstrap: create-if-missing, migrate, verify, and seed.
 
 This is the single source of truth for turning a *fresh* environment (just
-`git clone` + a running database server) into a ready-to-serve schema. It is
+`git clone` + a running PostgreSQL server) into a ready-to-serve schema. It is
 deliberately **idempotent** — every step is safe to run repeatedly:
 
-    1. ensure_database_exists  -> CREATE DATABASE IF NOT EXISTS (server-level)
+    1. ensure_database_exists  -> CREATE DATABASE (server-level, if missing)
     2. run_migrations          -> `alembic upgrade head` (tables/constraints/idx)
     3. verify_schema_current   -> confirm the DB is at the latest revision
     4. seed_default_data       -> insert required rows only when absent
@@ -17,7 +17,7 @@ never dropped, and the migration history stays authoritative.
 Entry points that call this:
     * `flask init-db`            (app/commands.py)
     * `python -m scripts.init_db`
-    * app boot, when DB_AUTO_UPGRADE is enabled (app/__init__.py)
+    * app boot, when DB_AUTO_UPGRADE is enabled (app/__init__.py) — default on
 """
 from __future__ import annotations
 
@@ -47,8 +47,8 @@ def ensure_database_exists(app: Flask) -> None:
 
     Alembic/`flask db upgrade` connects to an *existing* database — it cannot
     create the database itself. On a brand-new server that database does not
-    exist yet, so we connect to the server (without selecting a database) and
-    issue `CREATE DATABASE IF NOT EXISTS`. Safe to run repeatedly.
+    exist yet, so we connect to the maintenance DB and issue `CREATE DATABASE`.
+    Safe to run repeatedly.
 
     SQLite (used by the test suite) needs nothing here — the file is created on
     first connect. Unsupported backends are surfaced with a clear error rather
@@ -65,19 +65,15 @@ def ensure_database_exists(app: Flask) -> None:
     if not db_name:
         raise DatabaseInitError(
             "No database name is configured in SQLALCHEMY_DATABASE_URI. "
-            "Set MYSQL_DATABASE (or DATABASE_URL) before initializing."
+            "Set POSTGRES_DATABASE (or DATABASE_URL) before initializing."
         )
 
-    if backend == "mysql":
-        _ensure_mysql_database(url, db_name)
-    elif backend == "postgresql":
+    if backend == "postgresql":
         _ensure_postgres_database(url, db_name)
     else:
-        # Unknown backend: don't guess DDL. If the database already exists the
-        # later steps still work; otherwise the operator gets a clear message.
         logger.warning(
             "DB_INIT step=ensure_database backend=%s action=skip "
-            "(automatic database creation is only implemented for MySQL/PostgreSQL; "
+            "(automatic database creation is only implemented for PostgreSQL; "
             "create the '%s' database manually if it does not exist)",
             backend, db_name,
         )
@@ -102,39 +98,9 @@ def _without_database(url):
 
 def _autocommit_engine(url):
     """An AUTOCOMMIT engine for `url` so `CREATE DATABASE` is not trapped inside
-    a transaction. Callers pass a URL that points at the server without the
-    target database (MySQL) or at a maintenance database (PostgreSQL)."""
+    a transaction. Callers pass a URL that points at a maintenance database
+    (PostgreSQL `postgres`)."""
     return create_engine(url, isolation_level="AUTOCOMMIT", pool_pre_ping=True)
-
-
-def _ensure_mysql_database(url, db_name: str) -> None:
-    logger.info("DB_INIT step=ensure_database backend=mysql database=%s host=%s", db_name, url.host)
-    try:
-        engine = _autocommit_engine(_without_database(url))
-        with engine.connect() as conn:
-            exists = conn.execute(
-                text("SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = :n"),
-                {"n": db_name},
-            ).first()
-            if exists:
-                logger.info("DB_INIT step=ensure_database result=already_exists database=%s", db_name)
-                return
-            # utf8mb4 to match the app's charset (emoji-safe); backtick-quote the
-            # identifier since it cannot be a bound parameter in DDL.
-            conn.execute(text(
-                f"CREATE DATABASE IF NOT EXISTS `{db_name}` "
-                "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-            ))
-        engine.dispose()
-        logger.info("DB_INIT step=ensure_database result=created database=%s", db_name)
-    except OperationalError as exc:
-        raise DatabaseInitError(_connection_help(url, exc)) from exc
-    except SQLAlchemyError as exc:
-        raise DatabaseInitError(
-            f"Failed to create MySQL database '{db_name}': {exc}. "
-            f"Ensure user '{url.username}' has the CREATE privilege, or create the "
-            "database manually and re-run."
-        ) from exc
 
 
 def _ensure_postgres_database(url, db_name: str) -> None:
@@ -164,8 +130,8 @@ def _ensure_postgres_database(url, db_name: str) -> None:
 def _connection_help(url, exc: Exception) -> str:
     return (
         f"Cannot connect to the database server at {url.host}:{url.port} as "
-        f"'{url.username}'. Verify the server is running and the credentials in "
-        f"your environment (MYSQL_HOST/PORT/USER/PASSWORD or DATABASE_URL) are "
+        f"'{url.username}'. Verify PostgreSQL is running and the credentials in "
+        f"your environment (POSTGRES_HOST/PORT/USER/PASSWORD or DATABASE_URL) are "
         f"correct.\nUnderlying error: {exc}"
     )
 

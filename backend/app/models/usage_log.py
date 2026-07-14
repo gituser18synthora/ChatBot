@@ -5,7 +5,7 @@ from app.models.base import GUID, uuid_pk
 
 
 class UsageLog(db.Model):
-    """One row per billable OpenAI call. MySQL is the source of truth for cost."""
+    """One row per billable OpenAI call. PostgreSQL is the source of truth for cost."""
 
     __tablename__ = "usage_logs"
 

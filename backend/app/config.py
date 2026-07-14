@@ -36,12 +36,12 @@ def _build_database_uri() -> str:
     explicit = os.getenv("DATABASE_URL")
     if explicit:
         return explicit
-    user = os.getenv("MYSQL_USER", "root")
-    password = os.getenv("MYSQL_PASSWORD", "")
-    host = os.getenv("MYSQL_HOST", "127.0.0.1")
-    port = os.getenv("MYSQL_PORT", "3306")
-    database = os.getenv("MYSQL_DATABASE", "chatbot")
-    return f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}?charset=utf8mb4"
+    user = os.getenv("POSTGRES_USER", "postgres")
+    password = os.getenv("POSTGRES_PASSWORD", "")
+    host = os.getenv("POSTGRES_HOST", "127.0.0.1")
+    port = os.getenv("POSTGRES_PORT", "5432")
+    database = os.getenv("POSTGRES_DATABASE", "chatbot")
+    return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{database}"
 
 
 def _parse_model_pricing() -> dict:
@@ -70,9 +70,10 @@ class Config:
         "max_overflow": _int("DB_MAX_OVERFLOW", 20),
     }
     # Boot-time schema handling (see app._prepare_schema_on_boot):
-    #   DB_AUTO_UPGRADE   -> create-if-missing + run migrations at startup
+    #   DB_AUTO_UPGRADE   -> create DB + migrations + seed at startup (default on)
     #   DB_REQUIRE_CURRENT-> refuse to boot when the schema is behind head
-    DB_AUTO_UPGRADE = _bool("DB_AUTO_UPGRADE", False)
+    # Disable DB_AUTO_UPGRADE under multi-worker prod deploys to avoid race on migrate.
+    DB_AUTO_UPGRADE = _bool("DB_AUTO_UPGRADE", True)
     DB_REQUIRE_CURRENT = _bool("DB_REQUIRE_CURRENT", False)
 
     # ── JWT ───────────────────────────────────────────────────
@@ -148,7 +149,7 @@ class TestConfig(Config):
     TESTING = True
     ENV = "testing"
     DEBUG = True
-    # In-memory SQLite so tests need no external MySQL. Models avoid MySQL-only types.
+    # In-memory SQLite so tests need no external Postgres. Models avoid dialect-only types.
     SQLALCHEMY_DATABASE_URI = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
     SQLALCHEMY_ENGINE_OPTIONS = {}
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=1)

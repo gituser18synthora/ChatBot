@@ -9,12 +9,12 @@ from app.models.user import User
 
 
 def test_without_database_strips_db_name_but_keeps_rest():
-    url = make_url("mysql+pymysql://u:p@host:3306/mydb?charset=utf8mb4")
+    url = make_url("postgresql+psycopg://u:p@host:5432/mydb")
     stripped = db_init._without_database(url)
     assert stripped.database is None
     assert stripped.host == "host"
     assert stripped.username == "u"
-    assert stripped.query.get("charset") == "utf8mb4"
+    assert stripped.port == 5432
 
 
 def test_ensure_database_exists_is_noop_for_sqlite(app):

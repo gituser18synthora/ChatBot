@@ -1,4 +1,4 @@
-"""Knowledge Base metadata CRUD. KMRAG holds the vectors; MySQL holds metadata.
+"""Knowledge Base metadata CRUD. KMRAG holds the vectors; Postgres holds metadata.
 
 kb_id (the KnowledgeBase primary key) is globally unique and is the shared key
 passed to KMRAG on upload/query.

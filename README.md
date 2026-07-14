@@ -1,6 +1,6 @@
 # Aurexion Chatbot Platform
 
-A multi-tenant AI chatbot platform. It is a **standalone Flask + MySQL + Redis**
+A multi-tenant AI chatbot platform. It is a **standalone Flask + PostgreSQL + Redis**
 service that uses the existing **`Synthora-AI-dev/kmrag`** service as an internal
 RAG engine over HTTP. It answers general questions with OpenAI and
 document-grounded questions with KMRAG, with full tenant isolation, RBAC, cost
@@ -18,13 +18,13 @@ tracking, and audit logging.
                     ┌──────────────────────────────┐
   Admin Panel  ───► │                              │ ──► OpenAI  (general answers,
   Chat UI      ───► │   Chatbot Flask Backend      │      query classification,
-   (React/TS)       │   (this repo, MySQL + Redis) │      chat titles)
+   (React/TS)       │   (this repo, Postgres + Redis) │      chat titles)
                     │                              │ ──► KMRAG /upload  (async ingest)
                     └──────────────────────────────┘ ──► KMRAG /query   (RAG answer+sources)
 ```
 
 - The **frontend never calls KMRAG**. Only the Flask backend does, over HTTP.
-- **MySQL** is the source of truth for tenants, users, KBs (metadata), documents,
+- **PostgreSQL** is the source of truth for tenants, users, KBs (metadata), documents,
   chats, usage/cost, and audit logs.
 - **Redis** is cache / rate-limit / JWT-revocation only — never source of truth.
 - **KMRAG** owns OCR, parsing, chunking, embeddings, vector storage, retrieval,
@@ -63,7 +63,7 @@ then documents will sit at Processing.
 
 ### Known limitations (imposed by the current KMRAG API — not by this code)
 1. **No vector delete.** KMRAG exposes no delete endpoint, so document deletion
-   is **soft-delete only** in MySQL; the delete API response says so explicitly.
+   is **soft-delete only** in PostgreSQL; the delete API response says so explicitly.
    *Future KMRAG endpoint needed:* delete document/vectors by `kb_id`+file.
 2. **Sources lack `chunk_id`/`document_id`/preview.** KMRAG source rows carry
    `document_name, page_number, section, topic, score`. Those columns exist in
@@ -79,7 +79,7 @@ then documents will sit at Processing.
 ## 2. Prerequisites
 
 - Python 3.11+ (tested on 3.14)
-- MySQL 8+
+- PostgreSQL 14+
 - Redis 6+
 - A running KMRAG service (from `Synthora-AI-dev`) reachable at `KMRAG_BASE_URL`
 - An OpenAI API key
@@ -95,15 +95,25 @@ pip install -r requirements.txt
 cp .env.example .env          # then edit .env with real local values
 ```
 
-### MySQL
+### PostgreSQL
+
+The app needs a running Postgres server. With `DB_AUTO_UPGRADE=true` (default),
+startup will create the `chatbot` database if it is missing, apply all SQLAlchemy/
+Alembic migrations (tables, FKs, indexes), and seed the Super Admin.
+
+Optional manual setup:
 
 ```sql
-CREATE DATABASE chatbot CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'webuser'@'127.0.0.1' IDENTIFIED BY 'your_local_password';
-GRANT ALL PRIVILEGES ON chatbot.* TO 'webuser'@'127.0.0.1';
-FLUSH PRIVILEGES;
+CREATE DATABASE chatbot;
+CREATE USER webuser WITH PASSWORD 'your_local_password';
+GRANT ALL PRIVILEGES ON DATABASE chatbot TO webuser;
+-- On Postgres 15+: also grant schema privileges inside the DB
+\c chatbot
+GRANT ALL ON SCHEMA public TO webuser;
 ```
-Set `MYSQL_*` in `.env` to match (or set a full `DATABASE_URL`).
+
+Set `POSTGRES_*` in `.env` to match (or set a full `DATABASE_URL` such as
+`postgresql+psycopg://webuser:pass@127.0.0.1:5432/chatbot`).
 
 ### Redis
 
@@ -112,23 +122,34 @@ redis-server        # or: sudo systemctl start redis
 ```
 Set `REDIS_*` in `.env`.
 
-### Database migrations (Flask-Migrate / Alembic)
+### Database bootstrap (SQLAlchemy ORM + Alembic)
+
+On app start (`DB_AUTO_UPGRADE=true`), tables are created/updated automatically.
+You can also run the same flow manually:
 
 ```bash
 export FLASK_APP=run.py
-flask db upgrade          # applies migrations/ to your MySQL database
+flask init-db                 # create DB + migrate + seed
+# or just migrations:
+flask db upgrade
 ```
-To evolve the schema later: `flask db migrate -m "..."` then `flask db upgrade`.
 
-> **Always use `flask db upgrade` — never `db.create_all()` — against a real
-> database.** Creating tables outside Alembic leaves `alembic_version` behind and
-> the schema half-applied, which surfaces later as confusing 500s (e.g. a missing
-> assignment table making the chat KB list appear empty). The app now logs a
+To evolve the schema later: `flask db migrate -m "..."` then restart (or
+`flask db upgrade`).
+
+> Schema changes always go through Alembic migrations — not a bare
+> `db.create_all()` against a real database. Creating tables outside Alembic
+> leaves `alembic_version` behind and the schema half-applied. The app logs a
 > loud `DATABASE SCHEMA IS BEHIND` warning at boot whenever the database is not
-> at the latest migration; if you see it, run `flask db upgrade`.
-> `flask db check` reports any remaining model/schema drift.
+> at the latest migration. `flask db check` reports any remaining model/schema drift.
+>
+> For multi-worker production (many gunicorn workers), set `DB_AUTO_UPGRADE=false`
+> and run `flask init-db` once before starting workers.
 
 ### Create the first Super Admin (credentials from env — never hardcoded)
+
+With `SEED_SUPERADMIN_EMAIL` / `SEED_SUPERADMIN_PASSWORD` in `.env`, the Super
+Admin is created automatically on startup. You can also run:
 
 ```bash
 export SEED_SUPERADMIN_EMAIL="admin@yourco.com"
@@ -303,7 +324,7 @@ curl -s localhost:5000/api/v1/chat/sessions/$SID/messages -X POST \
 
 ## 7. User roles & permissions
 
-All users are rows in the MySQL `users` table (`password_hash` via argon2). Role
+All users are rows in the PostgreSQL `users` table (`password_hash` via argon2). Role
 ids are stable; the **`super_admin`** role is presented in the UI as **"Super
 User"**. A Super User has `tenant_id = NULL` (platform-wide). The first one is
 created by the seed script; after that Super Users create more users (any role)
@@ -391,7 +412,7 @@ or user (not self); a Tenant Admin can delete only Chat Users in their own tenan
 
 ### Document deletion (removes vectors from KMRAG)
 
-Deleting a document soft-deletes the record in MySQL (kept for audit/reversibility)
+Deleting a document soft-deletes the record in PostgreSQL (kept for audit/reversibility)
 **and** calls KMRAG `DELETE /kb/{kb_id}/files?tenant_id=&file_name=` (added in
 `kmrag/api/fast.py`, wrapping KMRAG's existing `delete_chunks_by_file`) so its
 chunks/embeddings are removed and it's excluded from retrieval. If KMRAG is

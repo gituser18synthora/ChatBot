@@ -7,8 +7,7 @@ Flask-SQLAlchemy==3.1.1
 
 # ── Database ──────────────────────────────────────────────────
 SQLAlchemy==2.0.32
-PyMySQL==1.1.1
-cryptography==43.0.1          # required by PyMySQL for caching_sha2_password
+psycopg[binary]>=3.1.18
 alembic==1.13.2
 
 # ── Redis ─────────────────────────────────────────────────────
