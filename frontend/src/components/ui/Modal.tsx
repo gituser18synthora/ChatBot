@@ -65,6 +65,7 @@ export function ConfirmDialog({
   confirmLabel = "Confirm",
   danger,
   loading,
+  confirmDisabled,
 }: {
   open: boolean;
   onClose: () => void;
@@ -74,6 +75,7 @@ export function ConfirmDialog({
   confirmLabel?: string;
   danger?: boolean;
   loading?: boolean;
+  confirmDisabled?: boolean;
 }) {
   return (
     <Modal
@@ -86,7 +88,11 @@ export function ConfirmDialog({
           <button className="btn-secondary" onClick={onClose} disabled={loading}>
             Cancel
           </button>
-          <button className={danger ? "btn-danger" : "btn-primary"} onClick={onConfirm} disabled={loading}>
+          <button
+            className={danger ? "btn-danger" : "btn-primary"}
+            onClick={onConfirm}
+            disabled={loading || confirmDisabled}
+          >
             {loading && <Spinner className="text-white" />}
             {confirmLabel}
           </button>

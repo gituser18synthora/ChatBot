@@ -11,6 +11,23 @@ from app.utils.response_utils import paginated, success, validation_error
 bp = Blueprint("documents", __name__, url_prefix="/api/v1")
 
 
+@bp.get("/upload-config")
+@admin_only
+def upload_config():
+    """Upload limits, so the client can validate a file BEFORE sending it.
+
+    A file over MAX_CONTENT_LENGTH is refused by the server mid-body (413), which
+    a browser often surfaces as a bare connection error. Validating client-side
+    first lets the UI show an accurate, specific message instead.
+    """
+    max_bytes = current_app.config["MAX_CONTENT_LENGTH"]
+    return success({
+        "max_file_size_mb": current_app.config["MAX_UPLOAD_FILE_SIZE_MB"],
+        "max_file_size_bytes": max_bytes,
+        "allowed_extensions": sorted(current_app.config["ALLOWED_FILE_EXTENSIONS"]),
+    })
+
+
 @bp.post("/knowledge-bases/<kb_id>/documents/upload")
 @admin_only
 @rate_limit("upload", "RATE_LIMIT_UPLOAD_PER_MINUTE")

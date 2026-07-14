@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from flask import Blueprint, request
 
+from app.constants import Role
 from app.middleware.auth_middleware import admin_only, current_user
 from app.middleware.tenant_middleware import assert_owns_entity, assert_tenant_access
 from app.schemas import load_body
@@ -56,9 +57,13 @@ def update_kb(kb_id):
 @bp.delete("/knowledge-bases/<kb_id>")
 @admin_only
 def delete_kb(kb_id):
+    user = current_user()
     kb = kb_service.get_kb(kb_id)
-    assert_owns_entity(current_user(), kb.tenant_id)
-    kb_service.delete_kb(kb_id, current_user().id)
+    assert_owns_entity(user, kb.tenant_id)  # preserve existing authorization
+    # Non-super-admins are additionally scoped to their own tenant inside the
+    # service (defense in depth); Super Admin (None) may target any tenant.
+    tenant_scope = None if user.role == Role.SUPER_ADMIN else user.tenant_id
+    kb_service.delete_kb(kb_id, user.id, tenant_scope=tenant_scope)
     return success({"message": "Knowledge base deleted."})
 
 

@@ -22,7 +22,15 @@ class KnowledgeBase(TimestampMixin, db.Model):
     status_message = db.Column(db.Text, nullable=True)
     created_by = db.Column(GUID(), nullable=True)
 
-    documents = db.relationship("Document", backref="knowledge_base", lazy="dynamic")
+    # passive_deletes=True: never let the ORM emit `UPDATE documents SET kb_id =
+    # NULL` when a KB is deleted. kb_id is a required FK; disassociation is
+    # invalid. Deletion of a KB that still has documents is refused in
+    # kb_service.delete_kb (409), so this relationship never has to fan out on
+    # delete. No `delete`/`delete-orphan` cascade is configured — deleting a KB
+    # must NOT silently destroy documents or their indexed data.
+    documents = db.relationship(
+        "Document", backref="knowledge_base", lazy="dynamic", passive_deletes=True
+    )
 
     def to_dict(self, document_count: int | None = None, status_counts: dict | None = None) -> dict:
         data = {

@@ -35,20 +35,32 @@ class ApiError(Exception):
     SQL, KMRAG internals, or credentials here.
     """
 
-    def __init__(self, message: str, status: int = 400, code: str = "bad_request"):
+    def __init__(
+        self,
+        message: str,
+        status: int = 400,
+        code: str = "bad_request",
+        details: dict | None = None,
+    ):
         super().__init__(message)
         self.message = message
         self.status = status
         self.code = code
+        # Extra, frontend-safe fields merged into the `error` object (e.g. a
+        # document_count the UI uses to explain why an action was blocked).
+        self.details = details or {}
 
     def to_response(self):
-        return (
-            jsonify({"success": False, "error": {"code": self.code, "message": self.message}}),
-            self.status,
-        )
+        error: dict[str, Any] = {"code": self.code, "message": self.message}
+        error.update(self.details)
+        return jsonify({"success": False, "error": error}), self.status
 
 
 # ── Convenience constructors for common cases ─────────────────
+def bad_request(message: str, code: str = "bad_request"):
+    return ApiError(message, 400, code)
+
+
 def unauthorized(message: str = "Your session has expired. Please log in again."):
     return ApiError(message, 401, "unauthorized")
 
@@ -63,6 +75,19 @@ def not_found(message: str = "The requested resource was not found."):
 
 def conflict(message: str):
     return ApiError(message, 409, "conflict")
+
+
+def kb_has_documents(document_count: int):
+    """409 raised when a Knowledge Base still holds documents and so may not be
+    deleted. Carries the count so the UI can explain the block."""
+    noun = "document" if document_count == 1 else "documents"
+    return ApiError(
+        f"Knowledge base cannot be deleted because it contains {document_count} {noun}. "
+        "Delete or move the documents first.",
+        409,
+        "KB_HAS_DOCUMENTS",
+        details={"document_count": document_count},
+    )
 
 
 def validation_error(message: str):
