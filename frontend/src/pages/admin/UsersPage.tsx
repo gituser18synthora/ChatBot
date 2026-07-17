@@ -13,6 +13,7 @@ import { Badge, Spinner } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/Icons";
 import { cn, formatDate } from "@/lib/utils";
 import type { Role, SelectableKb, User } from "@/api/types";
+import { ShieldBan } from "lucide-react";
 
 export function UsersPage() {
   const toast = useToast();
@@ -82,8 +83,8 @@ export function UsersPage() {
     },
     { header: "Last login", hideOn: "md", cell: (u) => <span className="text-sm text-slate-500">{formatDate(u.last_login_at)}</span> },
     {
-      header: "",
-      className: "text-right w-1",
+      header: "Actions",
+      className: "text-left w-1",
       cell: (u) => (
         <div className="flex justify-end gap-1">
           {/* KB assignment is a Chat User concept: admins always use all tenant KBs. */}
@@ -101,11 +102,13 @@ export function UsersPage() {
             <Icon.Edit width={17} height={17} />
           </button>
           <button
-            className="btn-secondary px-2.5 py-1.5 text-xs"
+            className="btn-ghost rounded-lg p-2"
             disabled={u.id === me?.id}
             onClick={() => toggleStatus(u)}
+            aria-label={u.is_active ? "Disable" : "Enable"}
+            title={u.is_active ? "Disable" : "Enable"}
           >
-            {u.is_active ? "Disable" : "Enable"}
+            <ShieldBan className="text-rose-500" width={17} height={17} />
           </button>
           {canDelete(u) && (
             <button
@@ -135,6 +138,7 @@ export function UsersPage() {
 
       <Card className="p-4">
         <div className="mb-4 flex flex-wrap items-center gap-3">
+          <SearchInput value={list.search} onChange={list.setSearch} placeholder="Search users…" />
           {isSuperAdmin && (
             <TenantPicker tenants={scope.tenants} value={scope.selected} onChange={scope.setSelected} allowAll className="w-full sm:w-48" />
           )}
@@ -144,7 +148,6 @@ export function UsersPage() {
             <option value="tenant_admin">Tenant Admin</option>
             <option value="chat_user">Chat User</option>
           </Select>
-          <SearchInput value={list.search} onChange={list.setSearch} placeholder="Search users…" />
           <span className="ml-auto text-sm text-slate-400">{list.meta?.total ?? 0} total</span>
         </div>
         {list.error ? (

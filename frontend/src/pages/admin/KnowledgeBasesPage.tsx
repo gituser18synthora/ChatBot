@@ -115,10 +115,10 @@ export function KnowledgeBasesPage() {
 
       <Card className="p-4">
         <div className="mb-4 flex flex-wrap items-center gap-3">
+          <SearchInput value={list.search} onChange={list.setSearch} placeholder="Search knowledge bases…" />
           {scope.isSuperAdmin && (
             <TenantPicker tenants={scope.tenants} value={scope.selected} onChange={scope.setSelected} className="w-full sm:w-56" />
           )}
-          <SearchInput value={list.search} onChange={list.setSearch} placeholder="Search knowledge bases…" />
           <span className="ml-auto text-sm text-slate-400">{list.meta?.total ?? 0} total</span>
         </div>
 

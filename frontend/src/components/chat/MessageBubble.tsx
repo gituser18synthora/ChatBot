@@ -7,6 +7,7 @@ import { useVoiceSettings } from "@/context/VoiceSettingsContext";
 import { useSpeaker } from "@/hooks/useSpeech";
 import { cn } from "@/lib/utils";
 import type { AnswerMode, ChatMessage } from "@/api/types";
+import logo from '../../assets/icon-logo.png'
 
 // The markdown stack (react-markdown + KaTeX + highlight.js) is heavy, so it
 // loads on demand: admin pages never fetch it, and the chat fetches it once.
@@ -78,8 +79,8 @@ export function MessageBubble({
 
   return (
     <div className="flex animate-fade-in-up gap-3">
-      <span className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-full bg-slate-900 text-white">
-        <Icon.Sparkle width={16} height={16} />
+      <span className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-full bg-brand-700 text-white">
+        <img src={logo} width={16} height={16} alt="Logo" />
       </span>
       <div className="min-w-0 max-w-[85%]">
         <div
@@ -141,8 +142,8 @@ export function MessageBubble({
 export function TypingBubble() {
   return (
     <div className="flex animate-fade-in-up gap-3">
-      <span className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-full bg-slate-900 text-white">
-        <Icon.Sparkle width={16} height={16} />
+      <span className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-full bg-brand-700 text-white">
+        <img src={logo} width={16} height={16} alt="Logo" />
       </span>
       <div className="flex items-center gap-1 rounded-2xl rounded-tl-sm border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
         <span className="typing-dot h-2 w-2 rounded-full bg-slate-400" style={{ animationDelay: "0ms" }} />
