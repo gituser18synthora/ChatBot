@@ -4,6 +4,7 @@ import { useToast } from "@/context/ToastContext";
 import { Modal } from "@/components/ui/Modal";
 import { Field, TextInput } from "@/components/ui/Field";
 import { Spinner } from "@/components/ui/primitives";
+import InputField from "./InputField";
 
 // Self-service password change, usable from the admin console and the chat UI.
 export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
@@ -48,29 +49,33 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
     >
       <form id="password-form" onSubmit={submit} className="space-y-4">
         <Field label="Current password" required>
-          <TextInput
+          <InputField
+            name="password"
             type="password"
-            required
             value={form.current}
-            onChange={(e) => setForm({ ...form, current: e.target.value })}
+            required
+            placeholder="Enter password"
+            onChange={(name, value) => setForm({ ...form, current: value })}
           />
         </Field>
         <Field label="New password" required hint="At least 8 characters.">
-          <TextInput
+          <InputField
+            name="password"
             type="password"
-            required
-            minLength={8}
             value={form.next}
-            onChange={(e) => setForm({ ...form, next: e.target.value })}
+            required
+            placeholder="Enter password"
+            onChange={(name, value) => setForm({ ...form, next: value })}
           />
         </Field>
         <Field label="Confirm new password" required>
-          <TextInput
+          <InputField
+            name="password"
             type="password"
-            required
-            minLength={8}
             value={form.confirm}
-            onChange={(e) => setForm({ ...form, confirm: e.target.value })}
+            required
+            placeholder="Enter password"
+            onChange={(name, value) => setForm({ ...form, confirm: value })}
           />
         </Field>
       </form>

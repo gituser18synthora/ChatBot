@@ -7,7 +7,6 @@ import { Icon } from "@/components/ui/Icons";
 import RobotImage from "@/assets/synthora-ai-front-view.png";
 import AurexionLogo from "@/assets/Aurexion-logo.svg";
 import InputField from "@/components/common/InputField";
-import Button from "@/components/ui/Button";
 
 export function LoginPage() {
   const { login, user } = useAuth();
@@ -71,15 +70,13 @@ export function LoginPage() {
       </div>
 
       {/* Form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-6">
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-6 ">
         <div className="w-full max-w-md rounded-3xl p-[1.6px] bg-gradient-to-br from-brand-200 via-brand-400 to-brand-200">
-          <div className="bg-white rounded-3xl px-8 py-14 flex flex-col gap-8">
+          <div className="bg-white rounded-3xl px-8 py-10 flex flex-col gap-8">
             <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900 text-start">Sign in</h2>
-              </div>
-              <div className="flex justify-center">
-                <img src={AurexionLogo} alt="Aurexion" className="h-10 w-auto object-contain" />
+              <div className="flex items-center justify-between w-full">
+                <h2 className="text-2xl font-semibold text-slate-900 text-start">Sign in</h2>
+                <h2 className="text-2xl font-semibold text-primary text-start">AI Chatbot</h2>
               </div>
             </div>
             <form onSubmit={onSubmit} className="space-y-4">

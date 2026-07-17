@@ -14,6 +14,7 @@ import { Icon } from "@/components/ui/Icons";
 import { cn, formatDate } from "@/lib/utils";
 import type { Role, SelectableKb, User } from "@/api/types";
 import { ShieldBan } from "lucide-react";
+import InputField from "@/components/common/InputField";
 
 export function UsersPage() {
   const toast = useToast();
@@ -312,7 +313,7 @@ function UserModal({
     <Modal
       open={true}
       onClose={onClose}
-      title={isEdit ? "Edit user" : "New user"}
+      title={isEdit ? "Edit User" : "New User"}
       footer={
         <>
           <button className="btn-secondary" onClick={onClose} disabled={saving}>
@@ -320,7 +321,7 @@ function UserModal({
           </button>
           <button className="btn-primary" form="user-form" disabled={saving || noKbForChatUser}>
             {saving && <Spinner className="text-white" />}
-            {isEdit ? "Save changes" : "Create user"}
+            {isEdit ? "Save changes" : "Create User"}
           </button>
         </>
       }
@@ -333,12 +334,19 @@ function UserModal({
           <TextInput type="email" required disabled={isEdit} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
         </Field>
         <Field label={isEdit ? "New password" : "Password"} required={!isEdit} hint={isEdit ? "Leave blank to keep current password." : "At least 8 characters."}>
-          <TextInput
+          <InputField
+            name="password"
             type="password"
-            required={!isEdit}
-            minLength={8}
             value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
+            required={!isEdit}
+            min={8}
+            placeholder="Enter password"
+            onChange={(name, value) =>
+              setForm((prev) => ({
+                ...prev,
+                [name]: value,
+              }))
+            }
           />
         </Field>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
