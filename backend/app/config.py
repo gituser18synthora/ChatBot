@@ -70,9 +70,10 @@ class Config:
         "max_overflow": _int("DB_MAX_OVERFLOW", 20),
     }
     # Boot-time schema handling (see app._prepare_schema_on_boot):
-    #   DB_AUTO_UPGRADE   -> create-if-missing + run migrations at startup
+    #   DB_AUTO_UPGRADE   -> create DB + migrations + seed at startup (default on)
     #   DB_REQUIRE_CURRENT-> refuse to boot when the schema is behind head
-    DB_AUTO_UPGRADE = _bool("DB_AUTO_UPGRADE", False)
+    # Disable DB_AUTO_UPGRADE under multi-worker prod deploys to avoid race on migrate.
+    DB_AUTO_UPGRADE = _bool("DB_AUTO_UPGRADE", True)
     DB_REQUIRE_CURRENT = _bool("DB_REQUIRE_CURRENT", False)
 
     # ── JWT ───────────────────────────────────────────────────

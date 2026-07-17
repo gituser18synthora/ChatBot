@@ -50,13 +50,13 @@ def create_app(config: type[Config] | None = None) -> Flask:
 
 
 def _prepare_schema_on_boot(app: Flask) -> None:
-    """Confirm the schema is up to date before the app serves traffic.
+    """Ensure the schema exists and is current before the app serves traffic.
 
-    Three modes, controlled by config (default = warn, safe for multi-worker
-    deploys where each worker must NOT run migrations):
-      * DB_AUTO_UPGRADE  -> run `flask db upgrade` automatically at boot, so a
-                            fresh environment self-heals. Use for single-instance
-                            / dev; avoid with many concurrent workers.
+    Controlled by config:
+      * DB_AUTO_UPGRADE (default True) -> create DB if missing, run Alembic
+                            migrations to create/update all tables, and seed
+                            default data. Ideal for single-instance / local
+                            dev; set to false with many concurrent workers.
       * DB_REQUIRE_CURRENT -> refuse to boot when the schema is behind (fail
                             fast instead of surfacing confusing runtime 500s).
       * otherwise         -> log a loud warning and boot anyway.
@@ -65,8 +65,10 @@ def _prepare_schema_on_boot(app: Flask) -> None:
 
     if app.config.get("DB_AUTO_UPGRADE"):
         try:
-            db_init.ensure_database_exists(app)
-            db_init.run_migrations(app)
+            # Create DB if missing, apply Alembic migrations (tables/indexes),
+            # and seed default data (idempotent). SQLAlchemy models + migrations
+            # own the schema — never a bare create_all() against a real DB.
+            db_init.initialize_database(app, seed=True)
         except db_init.DatabaseInitError as exc:
             logging.getLogger(__name__).error("DB_AUTO_UPGRADE failed: %s", exc)
             raise

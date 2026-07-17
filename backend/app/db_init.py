@@ -1,7 +1,7 @@
 """Database bootstrap: create-if-missing, migrate, verify, and seed.
 
 This is the single source of truth for turning a *fresh* environment (just
-`git clone` + a running database server) into a ready-to-serve schema. It is
+`git clone` + a running PostgreSQL server) into a ready-to-serve schema. It is
 deliberately **idempotent** — every step is safe to run repeatedly:
 
     1. ensure_database_exists  -> create the database if it is missing (server-level)
@@ -17,7 +17,7 @@ never dropped, and the migration history stays authoritative.
 Entry points that call this:
     * `flask init-db`            (app/commands.py)
     * `python -m scripts.init_db`
-    * app boot, when DB_AUTO_UPGRADE is enabled (app/__init__.py)
+    * app boot, when DB_AUTO_UPGRADE is enabled (app/__init__.py) — default on
 """
 from __future__ import annotations
 
@@ -78,8 +78,6 @@ def ensure_database_exists(app: Flask) -> None:
     if backend == "postgresql":
         _ensure_postgres_database(url, db_name)
     else:
-        # Unknown backend: don't guess DDL. If the database already exists the
-        # later steps still work; otherwise the operator gets a clear message.
         logger.warning(
             "DB_INIT step=ensure_database backend=%s action=skip "
             "(automatic database creation is only implemented for PostgreSQL; "

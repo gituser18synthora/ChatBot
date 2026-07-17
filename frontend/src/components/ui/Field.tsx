@@ -242,7 +242,7 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement> & SelectEx
                       option.disabled
                         ? "cursor-not-allowed text-slate-400"
                         : "hover:bg-slate-100",
-                      value === option.value && "bg-primary text-white hover:bg-primary"
+                      value === option.value && "bg-primary text-white hover:!bg-primary"
                     )}
                   >
                     {option.label}
