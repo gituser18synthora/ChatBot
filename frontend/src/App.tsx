@@ -7,7 +7,6 @@ import { ChatPage } from "@/pages/ChatPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { DashboardPage } from "@/pages/admin/DashboardPage";
 import { TenantsPage } from "@/pages/admin/TenantsPage";
-import { SuperTenantPage } from "@/pages/admin/SuperTenantPage";
 import { KnowledgeBasesPage } from "@/pages/admin/KnowledgeBasesPage";
 import { DocumentsPage } from "@/pages/admin/DocumentsPage";
 import { UsersPage } from "@/pages/admin/UsersPage";
@@ -54,14 +53,6 @@ export default function App() {
           element={
             <ProtectedRoute roles={["super_admin"]}>
               <TenantsPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="super-tenant"
-          element={
-            <ProtectedRoute roles={["super_admin"]}>
-              <SuperTenantPage />
             </ProtectedRoute>
           }
         />

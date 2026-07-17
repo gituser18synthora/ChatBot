@@ -38,6 +38,7 @@ from app.models.user import User
 from app.services import (
     audit_service,
     cost_service,
+    kb_service,
     retrieval_service,
     user_kb_service,
 )
@@ -52,6 +53,10 @@ logger = logging.getLogger(__name__)
 _HISTORY_TURNS = 10
 _NO_KB_AVAILABLE_MESSAGE = "No Knowledge Base is available for your account yet. Please contact your Tenant Admin."
 _KB_NOT_READY_MESSAGE = "Knowledge Base is not ready for chat yet."
+_NO_KB_FOR_CHAT_MESSAGE = (
+    "Chat cannot be opened because no Knowledge Base is available for this tenant. "
+    "Please create or upload a Knowledge Base first."
+)
 
 
 def _require_tenant(user: User) -> None:
@@ -72,6 +77,10 @@ def create_session(user: User, title: str | None, kb_ids: list[str]) -> ChatSess
     KB readiness is reported per-message with a clean answer instead, so
     'Start a New Chat' always drops the user straight into the chat UI."""
     _require_tenant(user)
+    # A Knowledge Base is mandatory to use the chatbot: block chat entirely for a
+    # tenant that has none yet (both Chat Users and Tenant Admins).
+    if not kb_service.tenant_has_kb(user.tenant_id):
+        raise ApiError(_NO_KB_FOR_CHAT_MESSAGE, 409, "no_knowledge_base")
     if user.role == Role.CHAT_USER and kb_ids:
         raise forbidden("Chat Users cannot select knowledge bases. Your Knowledge Bases are applied automatically.")
 

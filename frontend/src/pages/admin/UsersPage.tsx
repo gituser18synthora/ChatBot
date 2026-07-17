@@ -13,6 +13,7 @@ import { Badge, Spinner } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/Icons";
 import { cn, formatDate } from "@/lib/utils";
 import type { Role, SelectableKb, User } from "@/api/types";
+import { ShieldBan } from "lucide-react";
 
 export function UsersPage() {
   const toast = useToast();
@@ -82,8 +83,8 @@ export function UsersPage() {
     },
     { header: "Last login", hideOn: "md", cell: (u) => <span className="text-sm text-slate-500">{formatDate(u.last_login_at)}</span> },
     {
-      header: "",
-      className: "text-right w-1",
+      header: "Actions",
+      className: "text-left w-1",
       cell: (u) => (
         <div className="flex justify-end gap-1">
           {/* KB assignment is a Chat User concept: admins always use all tenant KBs. */}
@@ -101,11 +102,13 @@ export function UsersPage() {
             <Icon.Edit width={17} height={17} />
           </button>
           <button
-            className="btn-secondary px-2.5 py-1.5 text-xs"
+            className="btn-ghost rounded-lg p-2"
             disabled={u.id === me?.id}
             onClick={() => toggleStatus(u)}
+            aria-label={u.is_active ? "Disable" : "Enable"}
+            title={u.is_active ? "Disable" : "Enable"}
           >
-            {u.is_active ? "Disable" : "Enable"}
+            <ShieldBan className="text-rose-500" width={17} height={17} />
           </button>
           {canDelete(u) && (
             <button
@@ -135,6 +138,7 @@ export function UsersPage() {
 
       <Card className="p-4">
         <div className="mb-4 flex flex-wrap items-center gap-3">
+          <SearchInput value={list.search} onChange={list.setSearch} placeholder="Search users…" />
           {isSuperAdmin && (
             <TenantPicker tenants={scope.tenants} value={scope.selected} onChange={scope.setSelected} allowAll className="w-full sm:w-48" />
           )}
@@ -144,7 +148,6 @@ export function UsersPage() {
             <option value="tenant_admin">Tenant Admin</option>
             <option value="chat_user">Chat User</option>
           </Select>
-          <SearchInput value={list.search} onChange={list.setSearch} placeholder="Search users…" />
           <span className="ml-auto text-sm text-slate-400">{list.meta?.total ?? 0} total</span>
         </div>
         {list.error ? (
@@ -260,8 +263,19 @@ function UserModal({
   const toggleKb = (id: string) =>
     setKbIds((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
+  // A Chat User needs a Knowledge Base to query — block creation for a tenant
+  // that has none yet. (kbs is only loaded for the create-Chat-User case.)
+  const noKbForChatUser =
+    !isEdit && isChatUserRole && !!form.tenant_id && !loadingKbs && kbs.length === 0;
+  const NO_KB_MESSAGE =
+    "A chat user cannot be created because this tenant does not have any Knowledge Base. Please create a Knowledge Base first.";
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (noKbForChatUser) {
+      toast.error(NO_KB_MESSAGE);
+      return;
+    }
     setSaving(true);
     try {
       if (isEdit) {
@@ -304,7 +318,7 @@ function UserModal({
           <button className="btn-secondary" onClick={onClose} disabled={saving}>
             Cancel
           </button>
-          <button className="btn-primary" form="user-form" disabled={saving}>
+          <button className="btn-primary" form="user-form" disabled={saving || noKbForChatUser}>
             {saving && <Spinner className="text-white" />}
             {isEdit ? "Save changes" : "Create user"}
           </button>
@@ -370,9 +384,8 @@ function UserModal({
                 <Spinner /> Loading knowledge bases…
               </div>
             ) : kbs.length === 0 ? (
-              <p className="rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-slate-500">
-                This tenant has no knowledge bases yet. The Chat User will automatically use any
-                tenant knowledge bases created later.
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-700">
+                {NO_KB_MESSAGE}
               </p>
             ) : (
               <>

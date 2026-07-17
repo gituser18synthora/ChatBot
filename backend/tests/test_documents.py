@@ -240,6 +240,30 @@ def test_upload_tolerates_non_uuid_request_id_header(client, auth, seed, monkeyp
     assert doc.kmrag_request_id is None  # invalid id stored as NULL, not truncated
 
 
+def test_upload_config_reports_limits(client, auth, seed):
+    resp = client.get("/api/v1/upload-config", headers=auth("admin_a@x.com"))
+    assert resp.status_code == 200
+    data = resp.get_json()["data"]
+    assert data["max_file_size_mb"] > 0
+    assert data["max_file_size_bytes"] == data["max_file_size_mb"] * 1024 * 1024
+    assert "pdf" in data["allowed_extensions"]
+
+
+def test_oversize_upload_returns_clean_413(client, auth, seed, monkeypatch):
+    # A body over MAX_CONTENT_LENGTH must yield a controlled, size-specific error
+    # — never a generic message. Shrink the limit so the test payload trips it.
+    from flask import current_app
+    current_app.config["MAX_CONTENT_LENGTH"] = 1024  # 1 KB
+
+    monkeypatch.setattr("app.services.document_service.upload_document_to_kmrag", lambda **k: None)
+    resp = _upload(client, auth("admin_a@x.com"), seed["kb_a"], data=b"x" * 5000)
+    assert resp.status_code == 413
+    body = resp.get_json()
+    assert body["success"] is False
+    # Message names the real problem (size), with no SQL/stack trace.
+    assert "larger" in body["error"]["message"].lower() or "size" in body["error"]["message"].lower()
+
+
 def test_chat_user_cannot_upload(client, auth, seed, monkeypatch):
     monkeypatch.setattr("app.services.document_service.upload_document_to_kmrag", lambda **k: None)
     resp = _upload(client, auth("user_a@x.com"), seed["kb_a"])

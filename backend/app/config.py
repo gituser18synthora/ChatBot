@@ -40,7 +40,7 @@ def _build_database_uri() -> str:
     password = os.getenv("POSTGRES_PASSWORD", "")
     host = os.getenv("POSTGRES_HOST", "127.0.0.1")
     port = os.getenv("POSTGRES_PORT", "5432")
-    database = os.getenv("POSTGRES_DATABASE", "chatbot")
+    database = os.getenv("POSTGRES_DB", "chatbot")
     return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{database}"
 
 
@@ -149,7 +149,7 @@ class TestConfig(Config):
     TESTING = True
     ENV = "testing"
     DEBUG = True
-    # In-memory SQLite so tests need no external Postgres. Models avoid dialect-only types.
+    # In-memory SQLite so tests need no external PostgreSQL. Models avoid dialect-only types.
     SQLALCHEMY_DATABASE_URI = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
     SQLALCHEMY_ENGINE_OPTIONS = {}
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=1)

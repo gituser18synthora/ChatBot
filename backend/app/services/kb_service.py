@@ -1,11 +1,13 @@
-"""Knowledge Base metadata CRUD. KMRAG holds the vectors; Postgres holds metadata.
+"""Knowledge Base metadata CRUD. KMRAG holds the vectors; PostgreSQL holds metadata.
 
 kb_id (the KnowledgeBase primary key) is globally unique and is the shared key
 passed to KMRAG on upload/query.
 """
 from __future__ import annotations
 
-from sqlalchemy.exc import IntegrityError
+import logging
+
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.constants import AuditAction, DocumentStatus, KBStatus
 from app.extensions import db
@@ -13,8 +15,33 @@ from app.models.document import Document
 from app.models.knowledge_base import KnowledgeBase
 from app.services import audit_service
 from app.services.redis_service import cache_delete, kb_key
-from app.utils.response_utils import conflict, not_found
+from app.utils.logging_utils import get_request_id
+from app.utils.response_utils import (
+    bad_request,
+    conflict,
+    kb_has_documents,
+    not_found,
+    service_unavailable,
+)
 from app.utils.uuid_utils import is_valid_uuid, new_uuid
+
+logger = logging.getLogger(__name__)
+
+
+def tenant_has_kb(tenant_id: str | None) -> bool:
+    """Whether a tenant owns at least one Knowledge Base (any lifecycle status).
+
+    Used to gate chat access and Chat User creation: a Knowledge Base is
+    mandatory before either is allowed. Super Admins have no tenant, so they
+    never have one."""
+    if not tenant_id:
+        return False
+    return (
+        db.session.query(KnowledgeBase.id)
+        .filter(KnowledgeBase.tenant_id == tenant_id)
+        .first()
+        is not None
+    )
 
 
 def _doc_stats(kb_id: str) -> dict[str, int]:
@@ -42,6 +69,21 @@ def _doc_stats(kb_id: str) -> dict[str, int]:
 
 def _doc_count(kb_id: str) -> int:
     return _doc_stats(kb_id)["document_count"]
+
+
+def _active_doc_count(tenant_id: str, kb_id: str) -> int:
+    """Tenant-scoped count of documents that still occupy the KB (soft-deleted
+    rows excluded). Used to decide whether a KB may be deleted."""
+    return (
+        db.session.query(db.func.count(Document.id))
+        .filter(
+            Document.tenant_id == tenant_id,
+            Document.kb_id == kb_id,
+            Document.upload_status != DocumentStatus.DELETED,
+        )
+        .scalar()
+        or 0
+    )
 
 
 def _pending_message() -> str:
@@ -157,6 +199,9 @@ def list_kbs(tenant_id: str, page: int, per_page: int, search: str | None = None
 
 
 def get_kb(kb_id: str) -> KnowledgeBase:
+    # A malformed identifier is a client error (400), not a DB lookup.
+    if not is_valid_uuid(kb_id):
+        raise bad_request("Please provide a valid Knowledge Base ID.", "invalid_kb_id")
     kb = KnowledgeBase.query.get(kb_id)
     if not kb:
         raise not_found("The requested knowledge base was not found.")
@@ -242,14 +287,56 @@ def update_kb(kb_id: str, data: dict, actor_id: str) -> KnowledgeBase:
     return kb
 
 
-def delete_kb(kb_id: str, actor_id: str) -> None:
-    kb = get_kb(kb_id)
-    old = kb.to_dict()
+def delete_kb(kb_id: str, actor_id: str, tenant_scope: str | None = None) -> None:
+    """Delete a Knowledge Base, but only when it holds no documents.
+
+    Safety guarantees:
+      * Tenant-scoped: a non-super-admin caller (``tenant_scope`` set) can only
+        reach their own KB — another tenant's UUID resolves to 404.
+      * Never nullifies ``documents.kb_id``. Deletion is refused with 409 while
+        any non-deleted document remains, so SQLAlchemy is never asked to run
+        ``UPDATE documents SET kb_id = NULL`` (see the KnowledgeBase.documents
+        relationship: ``passive_deletes=True``, no delete cascade).
+      * Because only an empty KB is ever deleted, there is no per-document data
+        left in KMRAG / vector storage to clean up first — the relational
+        validation (zero documents) fully precedes any deletion.
+    """
+    kb = get_kb(kb_id)  # 400 on malformed id, 404 when missing
+    # Defense in depth alongside the route's authorization check: reject
+    # cross-tenant access at the query layer too (404, never confirm existence).
+    if tenant_scope is not None and kb.tenant_id != tenant_scope:
+        raise not_found("The requested knowledge base was not found.")
+
     tenant_id = kb.tenant_id
-    db.session.delete(kb)
-    audit_service.log_action(
-        action=AuditAction.KB_DELETED, entity_type="knowledge_base", entity_id=kb_id,
-        tenant_id=tenant_id, user_id=actor_id, old_data=old, commit=False,
-    )
-    db.session.commit()
+    document_count = _active_doc_count(tenant_id, kb_id)
+    if document_count > 0:
+        # Do not delete the KB and do not touch any document's kb_id.
+        raise kb_has_documents(document_count)
+
+    old = kb.to_dict()
+    try:
+        db.session.delete(kb)
+        audit_service.log_action(
+            action=AuditAction.KB_DELETED, entity_type="knowledge_base", entity_id=kb_id,
+            tenant_id=tenant_id, user_id=actor_id, old_data=old, commit=False,
+        )
+        db.session.commit()
+    except IntegrityError:
+        # A foreign-key reference we did not guard explicitly. Surface as a
+        # controlled 409 — never a raw SQL statement or stack trace.
+        db.session.rollback()
+        logger.warning(
+            "KB delete blocked by integrity constraint request_id=%s kb_id=%s",
+            get_request_id(), kb_id,
+        )
+        raise conflict(
+            "This knowledge base is still referenced by other records and cannot be deleted yet."
+        )
+    except SQLAlchemyError:
+        # Any other database failure: roll back so the session stays usable and
+        # return a controlled error with no internal details.
+        db.session.rollback()
+        logger.exception("KB delete failed request_id=%s kb_id=%s", get_request_id(), kb_id)
+        raise service_unavailable("The knowledge base could not be deleted. Please try again.")
+
     cache_delete(kb_key(tenant_id, kb_id))

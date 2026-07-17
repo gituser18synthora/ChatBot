@@ -6,10 +6,18 @@ from app.middleware.auth_middleware import current_user, require_auth
 from app.middleware.rate_limit_middleware import rate_limit
 from app.schemas import load_body
 from app.schemas.chat_schema import MessageCreateSchema, SessionCreateSchema, SessionUpdateSchema
-from app.services import chat_service, user_kb_service
+from app.services import chat_service, kb_service, user_kb_service
 from app.utils.response_utils import paginated, success
 
 bp = Blueprint("chat", __name__, url_prefix="/api/v1/chat")
+
+
+@bp.get("/availability")
+@require_auth
+def chat_availability():
+    """Whether the signed-in user's tenant has any Knowledge Base. Chat requires
+    at least one; the UI uses this to gate the 'Open Chat' / 'New Chat' actions."""
+    return success({"has_knowledge_base": kb_service.tenant_has_kb(current_user().tenant_id)})
 
 
 @bp.get("/knowledge-bases")

@@ -3,7 +3,7 @@ import { auditApi } from "@/api/services";
 import { useList } from "@/hooks/useList";
 import { useAuth } from "@/context/AuthContext";
 import { useTenantScope, TenantPicker } from "@/components/common/TenantPicker";
-import { PageHeader, EmptyState, ErrorState, Card, Badge } from "@/components/ui/primitives";
+import { PageHeader, EmptyState, ErrorState, Card, Badge, SearchInput } from "@/components/ui/primitives";
 import { DataTable, Pagination, type Column } from "@/components/ui/DataTable";
 import { Select } from "@/components/ui/Field";
 import { Modal } from "@/components/ui/Modal";
@@ -83,6 +83,7 @@ export function AuditLogsPage() {
       <PageHeader title="Audit Logs" subtitle="Security and activity trail" />
       <Card className="p-4">
         <div className="mb-4 flex flex-wrap items-center gap-3">
+          <SearchInput value={list.search} onChange={list.setSearch} placeholder="Search users…" />
           {isSuperAdmin && (
             <TenantPicker tenants={scope.tenants} value={scope.selected} onChange={scope.setSelected} allowAll className="w-full sm:w-48" />
           )}

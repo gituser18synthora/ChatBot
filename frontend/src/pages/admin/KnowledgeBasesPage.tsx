@@ -27,8 +27,12 @@ export function KnowledgeBasesPage() {
   const [toDelete, setToDelete] = useState<KnowledgeBase | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // A KB that still holds documents cannot be deleted (backend returns 409
+  // KB_HAS_DOCUMENTS). Reflect that in the confirm dialog before the call.
+  const deleteBlocked = (toDelete?.document_count ?? 0) > 0;
+
   const remove = async () => {
-    if (!toDelete) return;
+    if (!toDelete || deleteBlocked) return;
     setDeleting(true);
     try {
       await kbApi.remove(toDelete.id);
@@ -36,7 +40,9 @@ export function KnowledgeBasesPage() {
       setToDelete(null);
       list.reload();
     } catch (e: any) {
+      // Backend guards this too; surface its explanation (e.g. KB_HAS_DOCUMENTS).
       toast.error(e.message);
+      list.reload();
     } finally {
       setDeleting(false);
     }
@@ -109,10 +115,10 @@ export function KnowledgeBasesPage() {
 
       <Card className="p-4">
         <div className="mb-4 flex flex-wrap items-center gap-3">
+          <SearchInput value={list.search} onChange={list.setSearch} placeholder="Search knowledge bases…" />
           {scope.isSuperAdmin && (
             <TenantPicker tenants={scope.tenants} value={scope.selected} onChange={scope.setSelected} className="w-full sm:w-56" />
           )}
-          <SearchInput value={list.search} onChange={list.setSearch} placeholder="Search knowledge bases…" />
           <span className="ml-auto text-sm text-slate-400">{list.meta?.total ?? 0} total</span>
         </div>
 
@@ -168,12 +174,20 @@ export function KnowledgeBasesPage() {
         danger
         title="Delete knowledge base"
         confirmLabel="Delete"
+        confirmDisabled={deleteBlocked}
         message={
-          <span>
-            Delete <b>{toDelete?.kb_name}</b>? Its document records will be removed from the console.
-            Note: vector data in the RAG engine is retained until a KMRAG delete endpoint is
-            available.
-          </span>
+          deleteBlocked ? (
+            <span>
+              This knowledge base contains documents and cannot be deleted. Delete or move all
+              documents first.
+            </span>
+          ) : (
+            <span>
+              Delete <b>{toDelete?.kb_name}</b>? Its document records will be removed from the
+              console. Note: vector data in the RAG engine is retained until a KMRAG delete endpoint
+              is available.
+            </span>
+          )
         }
       />
     </div>

@@ -38,9 +38,10 @@ def upgrade():
         sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
         sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('tenant_id'),
     )
-    op.create_index('ix_voice_settings_tenant_id', 'voice_settings', ['tenant_id'])
+    # Model declares tenant_id as unique=True + index=True, which SQLAlchemy
+    # realizes as a single UNIQUE index (not a separate constraint + index).
+    op.create_index('ix_voice_settings_tenant_id', 'voice_settings', ['tenant_id'], unique=True)
 
 
 def downgrade():

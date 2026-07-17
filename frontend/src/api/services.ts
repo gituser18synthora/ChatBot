@@ -1,5 +1,6 @@
 // Typed API service layer. One place per resource; components never build URLs.
 import {
+  ApiRequestError,
   deleteData,
   getData,
   getPaginated,
@@ -126,6 +127,48 @@ export const kbApi = {
   remove: (id: string) => deleteData(`${V1}/knowledge-bases/${id}`),
 };
 
+// ── Upload limits ─────────────────────────────────────────────
+interface UploadConfig {
+  max_file_size_mb: number;
+  max_file_size_bytes: number;
+  allowed_extensions: string[];
+}
+
+// Cached so we validate every upload without re-fetching on each pick.
+let uploadConfig: UploadConfig | null = null;
+
+async function getUploadConfig(): Promise<UploadConfig | null> {
+  if (uploadConfig) return uploadConfig;
+  try {
+    uploadConfig = await getData<UploadConfig>(`${V1}/upload-config`);
+  } catch {
+    // If the limit can't be fetched, don't block with a wrong message — let the
+    // server be the authority for this attempt.
+    return null;
+  }
+  return uploadConfig;
+}
+
+function formatMb(mb: number): string {
+  return Number.isInteger(mb) ? `${mb}` : mb.toFixed(1);
+}
+
+/**
+ * Reject an over-limit file BEFORE it is sent. A too-large body is otherwise cut
+ * off by the server (413) and shows up in the browser as a bare connection
+ * error, so the pre-check is what makes the message accurate.
+ */
+async function assertUploadWithinLimit(file: File): Promise<void> {
+  const cfg = await getUploadConfig();
+  if (cfg && file.size > cfg.max_file_size_bytes) {
+    throw new ApiRequestError(
+      `The file size exceeds the maximum allowed limit (${formatMb(cfg.max_file_size_mb)} MB).`,
+      "file_too_large",
+      413,
+    );
+  }
+}
+
 // ── Documents ─────────────────────────────────────────────────
 export const documentApi = {
   list: (kbId: string, p: ListParams) =>
@@ -137,6 +180,7 @@ export const documentApi = {
     file: File,
     onProgress?: (pct: number) => void,
   ): Promise<DocumentItem> {
+    await assertUploadWithinLimit(file);
     const form = new FormData();
     form.append("file", file);
     // Do NOT set Content-Type here — the browser must set
@@ -154,6 +198,7 @@ export const documentApi = {
     kbName?: string,
     onProgress?: (pct: number) => void,
   ): Promise<{ knowledge_base: KnowledgeBase; document: DocumentItem }> {
+    await assertUploadWithinLimit(file);
     const form = new FormData();
     form.append("file", file);
     if (kbName) form.append("kb_name", kbName);
@@ -165,6 +210,7 @@ export const documentApi = {
     return resp.data.data as { knowledge_base: KnowledgeBase; document: DocumentItem };
   },
   async retry(id: string, file: File): Promise<DocumentItem> {
+    await assertUploadWithinLimit(file);
     const form = new FormData();
     form.append("file", file);
     const resp = await http.post(`${V1}/documents/${id}/retry`, form);
@@ -174,6 +220,9 @@ export const documentApi = {
 
 // ── Chat ──────────────────────────────────────────────────────
 export const chatApi = {
+  // Whether the signed-in user's tenant has any Knowledge Base. A KB is
+  // mandatory to open a chat; the UI gates "Open Chat" / "New Chat" on this.
+  availability: () => getData<{ has_knowledge_base: boolean }>(`${V1}/chat/availability`),
   // The KBs the signed-in user may ground a chat in (assignment-scoped).
   knowledgeBases: () => getData<SelectableKb[]>(`${V1}/chat/knowledge-bases`),
   listSessions: (p: ListParams) => getPaginated<ChatSession>(`${V1}/chat/sessions`, p),

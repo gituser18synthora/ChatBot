@@ -72,6 +72,13 @@ def _prepare_schema_on_boot(app: Flask) -> None:
         except db_init.DatabaseInitError as exc:
             logging.getLogger(__name__).error("DB_AUTO_UPGRADE failed: %s", exc)
             raise
+        # Seed required defaults (idempotent) so a freshly created schema is
+        # immediately usable — above all the Super Admin, or there is no account
+        # to log in with. A seeding hiccup must not stop the app from booting.
+        try:
+            db_init.seed_default_data(app)
+        except Exception as exc:  # pragma: no cover - defensive
+            logging.getLogger(__name__).error("Super Admin seeding failed: %s", exc)
 
     try:
         is_current, current, heads = db_init.schema_status(app)

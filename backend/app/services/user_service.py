@@ -53,6 +53,20 @@ def create_user(actor: User, data: dict) -> User:
     )
     _validate_role_creation(actor, role, tenant_id)
 
+    # A Chat User is only useful with a Knowledge Base to query: block creation
+    # for a tenant that has none yet. (Other roles manage the platform/tenant and
+    # are not gated on this.)
+    if role == Role.CHAT_USER:
+        from app.services import kb_service
+
+        if not kb_service.tenant_has_kb(tenant_id):
+            raise ApiError(
+                "A chat user cannot be created because this tenant does not have any "
+                "Knowledge Base. Please create a Knowledge Base first.",
+                409,
+                "no_knowledge_base",
+            )
+
     # Optional initial KB scoping, validated BEFORE the user row is created so a
     # bad selection never leaves a half-configured account. Scoping applies to
     # Chat Users only; empty means the Chat User searches all tenant KBs.

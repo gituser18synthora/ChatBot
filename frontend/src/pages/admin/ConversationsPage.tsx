@@ -56,10 +56,10 @@ export function ConversationsPage() {
       <PageHeader title="Conversations" subtitle="Chat activity across your tenant" />
       <Card className="p-4">
         <div className="mb-4 flex flex-wrap items-center gap-3">
+          <SearchInput value={list.search} onChange={list.setSearch} placeholder="Search conversations…" />
           {isSuperAdmin && (
             <TenantPicker tenants={scope.tenants} value={scope.selected} onChange={scope.setSelected} allowAll className="w-full sm:w-48" />
           )}
-          <SearchInput value={list.search} onChange={list.setSearch} placeholder="Search conversations…" />
           <span className="ml-auto text-sm text-slate-400">{list.meta?.total ?? 0} total</span>
         </div>
         {list.error ? (

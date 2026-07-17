@@ -95,12 +95,19 @@ http.interceptors.response.use(
     }
 
     const payload = error.response?.data;
-    const message =
-      payload?.error?.message ||
-      (status === 0
-        ? "Unable to reach the server. Check your connection and try again."
-        : "Something went wrong. Please try again.");
-    const code = payload?.error?.code || "error";
+    let message = payload?.error?.message;
+    if (!message) {
+      if (status === 413) {
+        // Body exceeded the server's limit — describe the real problem, not a
+        // generic "something went wrong" or network error.
+        message = "The file size exceeds the maximum allowed limit.";
+      } else if (status === 0) {
+        message = "Unable to reach the server. Check your connection and try again.";
+      } else {
+        message = "Something went wrong. Please try again.";
+      }
+    }
+    const code = payload?.error?.code || (status === 413 ? "file_too_large" : "error");
     throw new ApiRequestError(message, code, status);
   },
 );

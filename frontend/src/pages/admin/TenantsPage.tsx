@@ -2,7 +2,7 @@ import { FormEvent, useState } from "react";
 import { tenantApi } from "@/api/services";
 import { useList } from "@/hooks/useList";
 import { useToast } from "@/context/ToastContext";
-import { PageHeader, SearchInput, EmptyState, ErrorState, Card, Badge } from "@/components/ui/primitives";
+import { PageHeader, SearchInput, EmptyState, ErrorState, Card } from "@/components/ui/primitives";
 import { DataTable, Pagination, type Column } from "@/components/ui/DataTable";
 import { Modal, ConfirmDialog } from "@/components/ui/Modal";
 import { Field, TextInput, Select } from "@/components/ui/Field";
@@ -42,7 +42,6 @@ export function TenantsPage() {
         <div>
           <div className="flex items-center gap-2">
             <p className="font-medium text-slate-900">{t.tenant_name}</p>
-            {t.is_super_tenant && <Badge tone="purple">Super Tenant</Badge>}
           </div>
           <p className="text-xs text-slate-400">{t.tenant_code}</p>
         </div>
@@ -169,7 +168,6 @@ function TenantModal({
     tenant_name: tenant?.tenant_name || "",
     tenant_code: tenant?.tenant_code || "",
     status: tenant?.status || "active",
-    is_super_tenant: tenant?.is_super_tenant || false,
     rag_mode: tenant?.rag_mode || "rag_first",
     contact_name: tenant?.contact_name || "",
     contact_email: tenant?.contact_email || "",
@@ -187,7 +185,6 @@ function TenantModal({
         await tenantApi.update(tenant!.id, {
           tenant_name: form.tenant_name,
           status: form.status as Tenant["status"],
-          is_super_tenant: form.is_super_tenant,
           rag_mode: form.rag_mode as Tenant["rag_mode"],
           contact_name: form.contact_name || null,
           contact_email: form.contact_email || null,
@@ -351,24 +348,6 @@ function TenantModal({
               </Field>
             </div>
           </div>
-        )}
-        {isEdit && (
-          <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-slate-200 p-3">
-            <input
-              type="checkbox"
-              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-300"
-              checked={form.is_super_tenant}
-              onChange={(e) => setForm({ ...form, is_super_tenant: e.target.checked })}
-            />
-            <span>
-              <span className="block text-sm font-medium text-slate-700">Super Tenant</span>
-              <span className="block text-xs text-slate-400">
-                Marks this tenant as the platform's single Super Tenant: the owner of the shared
-                knowledge base library that can be assigned to other tenants. Checking this moves
-                the designation here from any other tenant. Leave unchecked for normal tenants.
-              </span>
-            </span>
-          </label>
         )}
       </form>
     </Modal>

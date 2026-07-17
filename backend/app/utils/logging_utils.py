@@ -19,7 +19,6 @@ _request_id: ContextVar[str] = ContextVar("request_id", default="-")
 _REDACTED_KEYS = {
     "password", "password_hash", "authorization", "access_token", "refresh_token",
     "token", "openai_api_key", "api_key", "secret", "jwt", "postgres_password",
-    "mysql_password",
 }
 
 
