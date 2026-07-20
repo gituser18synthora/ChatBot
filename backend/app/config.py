@@ -102,6 +102,12 @@ class Config:
     KMRAG_REQUEST_TIMEOUT_SECONDS = _int("KMRAG_REQUEST_TIMEOUT_SECONDS", 120)
     KMRAG_MAX_RETRY_COUNT = _int("KMRAG_MAX_RETRY_COUNT", 2)
     KMRAG_QUERY_MODEL = os.getenv("KMRAG_QUERY_MODEL", "gpt-4o-mini")
+    # Model recorded against document-ingestion usage rows. Ingestion is
+    # dominated by embedding calls (OCR/structuring LLM tokens are folded into
+    # the same KMRAG-reported total), so we label the row with the embedding
+    # model. Must mirror KMRAG's EMBEDDING_MODEL for the per-model cost
+    # breakdown to line up. Cost is taken from KMRAG, not priced locally.
+    KMRAG_EMBEDDING_MODEL = os.getenv("KMRAG_EMBEDDING_MODEL", "text-embedding-3-small")
     # Ingestion-status + per-file delete endpoint on KMRAG ({kb_id} substituted).
     KMRAG_KB_FILES_ENDPOINT = os.getenv("KMRAG_KB_FILES_ENDPOINT", "/kb/{kb_id}/files")
     # A document still `processing` after this long (with no KMRAG kb_files row)

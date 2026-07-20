@@ -85,6 +85,12 @@ class RequestType:
     CHAT_RAG = "chat_rag"
     QUERY_CLASSIFY = "query_classify"
     CHAT_TITLE = "chat_title"
+    # Document ingestion (embedding + OCR + LLM structuring). Billed once per
+    # document from KMRAG's reported per-file totals. Ingestion has no
+    # prompt/completion split we care about, so these rows carry tokens in
+    # total_tokens only — input_tokens/output_tokens stay 0 so that "input
+    # tokens" in analytics means query input, never document ingestion.
+    DOCUMENT_INGESTION = "document_ingestion"
 
 
 class AuditAction:
