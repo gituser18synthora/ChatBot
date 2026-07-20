@@ -92,7 +92,7 @@ export function LoginPage() {
                 name="email"
                 type="email"
                 value={email}
-                onChange={(name, value) => setEmail(value)}
+                onChange={(_, value) => setEmail(value)}
                 placeholder="you@company.com"
               />
               <InputField
@@ -100,7 +100,7 @@ export function LoginPage() {
                 type="password"
                 name="password"
                 value={password}
-                onChange={(name, value) => setPassword(value)}
+                onChange={(_, value) => setPassword(value)}
                 placeholder="••••••••"
               />
 
