@@ -50,9 +50,10 @@ export function AnalyticsPage() {
         <ErrorState message={costs.error} onRetry={costs.reload} />
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
             <MiniStat label="Input Tokens" value={formatNumber(tokens.data?.input_tokens)} />
             <MiniStat label="Output Tokens" value={formatNumber(tokens.data?.output_tokens)} />
+            <MiniStat label="Document Tokens" value={formatNumber(tokens.data?.document_tokens)} />
             <MiniStat label="Total Tokens" value={formatNumber(tokens.data?.total_tokens)} />
             <MiniStat
               label="30-Day Cost"

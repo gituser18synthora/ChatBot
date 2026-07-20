@@ -202,6 +202,7 @@ export interface TokenBreakdown {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
+  document_tokens: number;
 }
 
 export interface AuditLog {
