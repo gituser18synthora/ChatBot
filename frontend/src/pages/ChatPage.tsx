@@ -44,13 +44,6 @@ function ChatView() {
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [changingPw, setChangingPw] = useState(false);
-  // A Knowledge Base is mandatory to chat. `null` while unknown; `false` blocks
-  // starting a chat and shows the guidance message.
-  const [chatAllowed, setChatAllowed] = useState<boolean | null>(null);
-
-  const NO_KB_MESSAGE =
-    "Chat cannot be opened because no Knowledge Base is available for this tenant. Please create or upload a Knowledge Base first.";
-
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 

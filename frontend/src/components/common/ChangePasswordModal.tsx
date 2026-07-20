@@ -2,7 +2,7 @@ import { FormEvent, useState } from "react";
 import { profileApi } from "@/api/services";
 import { useToast } from "@/context/ToastContext";
 import { Modal } from "@/components/ui/Modal";
-import { Field, TextInput } from "@/components/ui/Field";
+import { Field } from "@/components/ui/Field";
 import { Spinner } from "@/components/ui/primitives";
 import InputField from "./InputField";
 
@@ -55,7 +55,7 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
             value={form.current}
             required
             placeholder="Enter password"
-            onChange={(name, value) => setForm({ ...form, current: value })}
+            onChange={(_, value) => setForm({ ...form, current: value })}
           />
         </Field>
         <Field label="New password" required hint="At least 8 characters.">
@@ -65,7 +65,7 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
             value={form.next}
             required
             placeholder="Enter password"
-            onChange={(name, value) => setForm({ ...form, next: value })}
+            onChange={(_, value) => setForm({ ...form, next: value })}
           />
         </Field>
         <Field label="Confirm new password" required>
@@ -75,7 +75,7 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
             value={form.confirm}
             required
             placeholder="Enter password"
-            onChange={(name, value) => setForm({ ...form, confirm: value })}
+            onChange={(_, value) => setForm({ ...form, confirm: value })}
           />
         </Field>
       </form>

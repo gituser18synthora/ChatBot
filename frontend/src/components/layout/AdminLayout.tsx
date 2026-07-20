@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { ChevronLeft, ChevronRight, X as CloseIcon, Plus } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -169,7 +169,7 @@ function ChatSidebarContent({ collapsed, onClose }: { collapsed: boolean; onClos
             value={search}
             placeholder="Search conversations"
             size="md"
-            onChange={(name, value) => setSearch(value)}
+            onChange={(_, value) => setSearch(value)}
             inputStyle="
       !bg-[#4E40C8]
       !border-[#6557DB]
