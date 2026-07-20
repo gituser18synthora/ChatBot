@@ -715,12 +715,18 @@ def _try_rag(
 
     _persist_sources(assistant, queryable_kb_ids, qualifying)
 
-    # Record KMRAG-reported usage if present; otherwise a zero row (documented:
-    # KMRAG-side cost depends on KMRAG telemetry availability).
+    # Record KMRAG-reported usage if present; otherwise no row (documented:
+    # KMRAG-side cost depends on KMRAG telemetry availability). The cost is
+    # KMRAG's own — it spans the LLM legs AND the query embedding, priced with
+    # KMRAG's pricing table, so repricing it locally against the query model
+    # alone would misprice the embedding half. `align_cost` is excluded on
+    # purpose: _align_answer_language records its own usage row for that call.
     if usage.get("total_tokens"):
         cost_service.record_usage(
             tenant_id=session.tenant_id, model=usage.get("model") or current_app.config["KMRAG_QUERY_MODEL"],
             input_tokens=usage.get("input_tokens", 0), output_tokens=usage.get("output_tokens", 0),
+            total_tokens=usage.get("total_tokens"),
+            total_cost_usd=Decimal(str(usage.get("total_cost", 0) or 0)),
             request_type=RequestType.CHAT_RAG, user_id=user.id,
             chat_session_id=session.id, latency_ms=latency, commit=False,
         )
@@ -860,13 +866,61 @@ def _persist_sources(message: ChatMessage, kb_ids: list[str], sources: list[dict
 
 
 def _kmrag_usage(metadata: dict) -> dict:
-    """Extract token/cost telemetry from KMRAG metadata if present."""
+    """Extract query token/cost telemetry from KMRAG metadata.
+
+    KMRAG only exposes `total_tokens`, `total_cost` and `model` at the top level
+    of its /query metadata — there are NO top-level input_tokens/output_tokens.
+    The per-leg split lives under metadata["steps"]:
+      * LLM legs (`manager`, `generation`) -> steps[leg]["usage"] with
+        prompt_tokens / completion_tokens
+      * query embedding                    -> steps["embedding"]["total_tokens"]
+
+    We mirror KMRAG's own _QueryUsageTracker convention:
+        input  = Σ prompt_tokens + embedding tokens  (embedding counts as input,
+                 exactly like KMRAG's Kafka event: tokens_input = llm_input + embedding)
+        output = Σ completion_tokens
+    so our numbers reconcile with the usage KMRAG publishes for the same query.
+    Any step carrying a `usage` dict is summed, so a new LLM leg is picked up
+    without a change here.
+
+    The HTTP /query metadata attributes ~a dozen tokens differently than KMRAG's
+    internal tracker (the source of its Kafka event), so the per-step sum can be
+    a little short. `total_tokens` and `output` ARE authoritative, so when a real
+    total is present we derive input = total - output. That closes the split gap
+    and makes our numbers match KMRAG's Kafka event exactly (embedding folds into
+    input, per KMRAG's own convention).
+    """
     if not metadata:
         return {}
+
+    steps = metadata.get("steps") or {}
+    input_tokens = 0
+    output_tokens = 0
+    for step in steps.values():
+        if not isinstance(step, dict):
+            continue
+        usage = step.get("usage")
+        if isinstance(usage, dict):
+            input_tokens += int(usage.get("prompt_tokens", 0) or 0)
+            output_tokens += int(usage.get("completion_tokens", 0) or 0)
+
+    embedding = steps.get("embedding")
+    if isinstance(embedding, dict):
+        input_tokens += int(embedding.get("total_tokens", 0) or 0)
+
+    # Trust KMRAG's own total when present (it's what its Kafka event bills);
+    # fall back to the parts for a cached/partial response.
+    total_tokens = int(metadata.get("total_tokens", 0) or 0) or (input_tokens + output_tokens)
+
+    # Reconcile the split to the authoritative total (output is reliable; the
+    # HTTP per-step input can be a few tokens short). Never go negative.
+    if total_tokens:
+        input_tokens = max(total_tokens - output_tokens, 0)
+
     return {
         "model": metadata.get("model"),
-        "input_tokens": int(metadata.get("input_tokens", 0) or 0),
-        "output_tokens": int(metadata.get("output_tokens", 0) or 0),
-        "total_tokens": int(metadata.get("total_tokens", 0) or 0),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
         "total_cost": metadata.get("total_cost", 0) or 0,
     }

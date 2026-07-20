@@ -13,11 +13,12 @@ import logging
 import os
 import tempfile
 from datetime import datetime
+from decimal import Decimal
 
 from flask import current_app
 from sqlalchemy.exc import IntegrityError
 
-from app.constants import AuditAction, DocumentStatus, KBStatus
+from app.constants import AuditAction, DocumentStatus, KBStatus, RequestType
 from app.extensions import db
 from app.integrations.kmrag_client import (
     KmragConflict,
@@ -29,13 +30,74 @@ from app.integrations.kmrag_client import (
 )
 from app.models.document import Document
 from app.models.knowledge_base import KnowledgeBase
-from app.services import audit_service
+from app.services import audit_service, cost_service
 from app.utils.file_utils import validate_upload
 from app.utils.logging_utils import get_request_id
 from app.utils.response_utils import ApiError, not_found
 from app.utils.uuid_utils import new_uuid
 
 logger = logging.getLogger(__name__)
+
+
+def _capture_ingestion_usage(doc: Document, file_info: dict) -> bool:
+    """Record this document's ingestion token/cost usage exactly once.
+
+    KMRAG's kb_files row carries the file's WHOLE ingestion cost — embedding
+    tokens plus the GPT-OCR-fallback and LLM-doc-structuring tokens that KMRAG
+    folds into the same totals (see kafka_consumers STEP 4/7). We take those
+    numbers verbatim: KMRAG prices them against its own pricing table, and our
+    local MODEL_PRICING has no embedding entry.
+
+    Tokens land in total_tokens only, with input/output left at 0 — an ingestion
+    document has no "input tokens" in the sense the analytics page means, and
+    merging them into input_tokens would corrupt the query input/output split.
+
+    Idempotent: `ingestion_total_tokens IS NULL` is the not-yet-billed marker, so
+    reconcile can run on every document-list load without double billing.
+    Returns True when a usage row was written.
+    """
+    if doc.ingestion_total_tokens is not None:
+        return False  # already billed
+
+    total_tokens = int(file_info.get("total_tokens") or 0)
+    total_cost = Decimal(str(file_info.get("total_cost_usd") or 0))
+    embedding_cost = Decimal(str(file_info.get("embedding_cost_usd") or 0))
+    # total_cost_usd is meant to be embedding + ingestion-LLM cost, so it can
+    # never be legitimately LESS than the embedding slice. Older deployed KMRAG
+    # builds populate embedding_cost_usd but leave total_cost_usd at 0, which
+    # would bill the document at $0 despite real spend. Fall back to the largest
+    # cost the response actually evidences.
+    if total_cost < embedding_cost:
+        logger.warning(
+            "KMRAG reported total_cost_usd=%s < embedding_cost_usd=%s for %r; "
+            "using the embedding cost (upstream ingestion-LLM cost unavailable)",
+            total_cost, embedding_cost, file_info.get("file_name"),
+        )
+        total_cost = embedding_cost
+    if total_tokens <= 0 and total_cost <= 0:
+        # KMRAG hasn't reported usage for this file (older ingest, or a row
+        # written before usage tracking). Leave NULL and retry on a later
+        # reconcile rather than locking in a bogus zero.
+        return False
+
+    doc.ingestion_total_tokens = total_tokens
+    doc.ingestion_cost_usd = total_cost
+    cost_service.record_usage(
+        tenant_id=doc.tenant_id,
+        model=current_app.config["KMRAG_EMBEDDING_MODEL"],
+        input_tokens=0,
+        output_tokens=0,
+        total_tokens=total_tokens,
+        total_cost_usd=total_cost,
+        request_type=RequestType.DOCUMENT_INGESTION,
+        user_id=doc.uploaded_by,
+        commit=False,  # committed with the reconcile transaction
+    )
+    logger.info(
+        "ingestion usage recorded doc=%s tenant=%s tokens=%s cost=%s",
+        doc.id, doc.tenant_id, total_tokens, total_cost,
+    )
+    return True
 
 
 def reconcile_kb_documents(kb_id: str) -> int:
@@ -46,27 +108,39 @@ def reconcile_kb_documents(kb_id: str) -> int:
       processing/uploading  -> completed  (file present in KMRAG)
       processing/uploading  -> failed     (still absent after the timeout)
 
+    This is also where document ingestion usage is billed — KMRAG publishes it to
+    a Kafka topic we don't consume, so the kb_files HTTP response is our source.
+    Already-completed documents are included so that documents indexed before
+    usage tracking existed get backfilled on the next Documents-page load.
+
     Best-effort: if KMRAG status can't be fetched, nothing changes. Returns the
     number of documents updated.
     """
     from datetime import timedelta
 
     in_flight = {DocumentStatus.UPLOADING, DocumentStatus.PROCESSING}
-    candidates = Document.query.filter(
-        Document.kb_id == kb_id,
-        Document.upload_status.in_(list(in_flight)),
-        Document.deleted_at.is_(None),
-    ).all()
     from app.services import kb_service
-
-    if not candidates:
-        kb = KnowledgeBase.query.get(kb_id)
-        if kb is not None:
-            kb_service.refresh_kb_status(kb, commit=True)
-        return 0
 
     kb = KnowledgeBase.query.get(kb_id)
     if kb is None:
+        return 0
+
+    # In-flight docs need a status decision; completed-but-unbilled docs still
+    # need their usage captured (backfill), so both shapes are candidates.
+    candidates = Document.query.filter(
+        Document.kb_id == kb_id,
+        Document.deleted_at.is_(None),
+        db.or_(
+            Document.upload_status.in_(list(in_flight)),
+            db.and_(
+                Document.upload_status == DocumentStatus.COMPLETED,
+                Document.ingestion_total_tokens.is_(None),
+            ),
+        ),
+    ).all()
+
+    if not candidates:
+        kb_service.refresh_kb_status(kb, commit=True)
         return 0
 
     files = get_kb_files(tenant_id=kb.tenant_id, kb_id=kb_id)
@@ -83,6 +157,7 @@ def reconcile_kb_documents(kb_id: str) -> int:
     timeout = timedelta(minutes=int(current_app.config["DOCUMENT_PROCESSING_TIMEOUT_MINUTES"]))
     now = datetime.utcnow()
     updated = 0
+    billed = 0
 
     for doc in candidates:
         indexed = by_name.get(doc.original_filename)
@@ -92,6 +167,9 @@ def reconcile_kb_documents(kb_id: str) -> int:
                 doc.processed_at = now
                 doc.ingestion_error = None
                 updated += 1
+            # Bill newly-completed AND previously-completed-but-unbilled docs.
+            if _capture_ingestion_usage(doc, indexed):
+                billed += 1
         elif doc.upload_status in in_flight:
             started = doc.uploaded_at or doc.created_at or now
             if now - started > timeout:
@@ -102,10 +180,15 @@ def reconcile_kb_documents(kb_id: str) -> int:
                 )
                 updated += 1
 
-    if updated:
+    # A billed-but-unchanged doc still has pending writes (usage row + the
+    # document's ingestion totals), so commit on either.
+    if updated or billed:
         kb_service.refresh_kb_status(kb)
         db.session.commit()
-        logger.info("reconciled kb=%s documents_updated=%s", kb_id, updated)
+        logger.info(
+            "reconciled kb=%s documents_updated=%s documents_billed=%s",
+            kb_id, updated, billed,
+        )
     else:
         kb_service.refresh_kb_status(kb, commit=True)
     return updated

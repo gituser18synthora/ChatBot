@@ -29,6 +29,14 @@ class Document(TimestampMixin, db.Model):
     kmrag_request_id = db.Column(GUID(), nullable=True)
     ingestion_error = db.Column(db.Text, nullable=True)
 
+    # Ingestion cost/token totals as reported by KMRAG for this file. These cover
+    # the WHOLE ingestion: embedding + GPT-OCR fallback + LLM doc structuring
+    # (KMRAG folds all three into kb_files.total_tokens / total_cost_usd).
+    # NULL means "not billed yet" and is the idempotency marker — a usage_logs row
+    # is written exactly once, when these flip from NULL to a value.
+    ingestion_total_tokens = db.Column(db.Integer, nullable=True)
+    ingestion_cost_usd = db.Column(db.Numeric(16, 10), nullable=True)
+
     uploaded_by = db.Column(GUID(), nullable=True)
     uploaded_at = db.Column(db.DateTime, nullable=True)
     processed_at = db.Column(db.DateTime, nullable=True)
@@ -44,6 +52,12 @@ class Document(TimestampMixin, db.Model):
             "file_size_bytes": self.file_size_bytes,
             "upload_status": self.upload_status,
             "ingestion_error": self.ingestion_error,
+            "ingestion_total_tokens": (
+                int(self.ingestion_total_tokens) if self.ingestion_total_tokens is not None else None
+            ),
+            "ingestion_cost_usd": (
+                float(self.ingestion_cost_usd) if self.ingestion_cost_usd is not None else None
+            ),
             "uploaded_by": self.uploaded_by,
             "uploaded_at": self.uploaded_at.isoformat() if self.uploaded_at else None,
             "processed_at": self.processed_at.isoformat() if self.processed_at else None,

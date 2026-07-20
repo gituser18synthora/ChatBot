@@ -54,10 +54,29 @@ def record_usage(
     user_id: str | None = None,
     chat_session_id: str | None = None,
     latency_ms: int | None = None,
+    total_tokens: int | None = None,
+    total_cost_usd: Decimal | float | str | None = None,
     commit: bool = True,
 ) -> UsageLog:
-    """Persist a usage/cost row. Does NOT swallow DB errors — caller decides."""
+    """Persist a usage/cost row. Does NOT swallow DB errors — caller decides.
+
+    `total_cost_usd` records an upstream-reported cost verbatim instead of
+    computing it from local pricing. Needed for KMRAG-side usage (document
+    ingestion, RAG queries) where the real cost is computed by KMRAG against its
+    own pricing table — notably embeddings, which local MODEL_PRICING has no
+    entry for and would therefore price at 0.
+
+    `total_tokens` likewise overrides the input+output sum, for upstream totals
+    that legitimately exceed the parts we split out (again: ingestion).
+    """
     costs = compute_cost(model, input_tokens, output_tokens)
+    if total_cost_usd is not None:
+        # Upstream cost is authoritative; we have no basis to split it.
+        costs = {
+            "input_cost_usd": Decimal(0),
+            "output_cost_usd": Decimal(0),
+            "total_cost_usd": Decimal(str(total_cost_usd)),
+        }
     log = UsageLog(
         tenant_id=tenant_id,
         user_id=user_id,
@@ -66,7 +85,9 @@ def record_usage(
         model_name=model,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
-        total_tokens=input_tokens + output_tokens,
+        total_tokens=(
+            total_tokens if total_tokens is not None else input_tokens + output_tokens
+        ),
         input_cost_usd=costs["input_cost_usd"],
         output_cost_usd=costs["output_cost_usd"],
         total_cost_usd=costs["total_cost_usd"],
