@@ -90,10 +90,10 @@ def set_user_kbs(user_id):
 @bp.post("/<user_id>/token")
 @admin_only
 def generate_user_token(user_id):
-    """Generate (or regenerate) an access token for a Chat User.
+    """Generate (or regenerate) a 32-char opaque access token for a Chat User.
 
-    Token claims / stored row: user_id, tenant_id, kb_ids (current assignment
-    snapshot). One active token per Chat User — calling again replaces it.
+    Stored row: user_id, tenant_id, kb_ids (assignment snapshot), token.
+    One active token per Chat User — calling again replaces it.
     """
     return success(user_token_service.generate_token(current_user(), user_id), status=201)
 

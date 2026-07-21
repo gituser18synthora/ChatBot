@@ -1,13 +1,12 @@
 """Chat User access tokens issued by Tenant Admins / Super Users.
 
-POST /api/v1/users/<user_id>/token generates (or regenerates) a JWT scoped to
-that Chat User's tenant_id + KB assignments and persists it in `user_token`.
+POST /api/v1/users/<user_id>/token generates (or regenerates) a short opaque
+token scoped to that Chat User's tenant_id + KB assignments and persists it in
+`user_token`. Lookup is by the stored token string — these are not JWTs.
 """
 from __future__ import annotations
 
-from datetime import timedelta
-
-from flask_jwt_extended import create_access_token
+import secrets
 
 from app.constants import AuditAction, Role
 from app.extensions import db
@@ -17,10 +16,13 @@ from app.services import audit_service, user_kb_service, user_service
 from app.utils.response_utils import forbidden, not_found, validation_error
 from app.utils.uuid_utils import new_uuid
 
-# Issued tokens are long-lived so Tenant Admins can hand them to embed/API
-# clients without forcing frequent regeneration. Regenerating invalidates the
-# previous row (one active token per Chat User).
-_TOKEN_TTL = timedelta(days=365)
+# 16 random bytes -> 32 hex characters. Regenerating replaces the previous row
+# (one active token per Chat User).
+_TOKEN_BYTES = 16
+
+
+def _new_opaque_token() -> str:
+    return secrets.token_hex(_TOKEN_BYTES)
 
 
 def _load_chat_user(actor: User, user_id: str) -> User:
@@ -59,17 +61,7 @@ def generate_token(actor: User, user_id: str) -> dict:
     """Create or replace the access token for a Chat User."""
     target = _load_chat_user(actor, user_id)
     kb_ids = _kb_ids_for_token(target)
-
-    token = create_access_token(
-        identity=target.id,
-        additional_claims={
-            "role": target.role,
-            "tenant_id": target.tenant_id,
-            "kb_ids": kb_ids,
-            "token_type": "chat_user_access",
-        },
-        expires_delta=_TOKEN_TTL,
-    )
+    token = _new_opaque_token()
 
     row = UserToken.query.filter_by(user_id=target.id).first()
     if row is None:

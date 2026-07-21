@@ -1,8 +1,8 @@
 """Per-chat-user access tokens issued by Tenant Admins.
 
-One row per Chat User. Regenerating replaces the previous token. The token
-encodes (and the row stores) the user's tenant_id, their KB scope, and user_id
-so embed/API clients can authenticate as that Chat User against those KBs.
+One row per Chat User. Regenerating replaces the previous token. The row stores
+a short opaque token plus the user's tenant_id, KB scope, and user_id so
+embed/API clients can authenticate as that Chat User against those KBs.
 """
 from __future__ import annotations
 

@@ -13,6 +13,8 @@ def test_tenant_admin_generates_token_for_chat_user(client, auth, seed, assign_u
     assert data["tenant_id"] == seed["tenant_a"]
     assert data["kb_ids"] == [seed["kb_a"]]
     assert data["token"]
+    assert len(data["token"]) == 32
+    assert data["token"].isalnum()
 
     row = UserToken.query.filter_by(user_id=seed["user_a"]).one()
     assert row.token == data["token"]
