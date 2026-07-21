@@ -12,7 +12,7 @@ from app.schemas.user_schema import (
     UserStatusSchema,
     UserUpdateSchema,
 )
-from app.services import user_kb_service, user_service
+from app.services import user_kb_service, user_service, user_token_service
 from app.utils.response_utils import paginated, success
 
 bp = Blueprint("users", __name__, url_prefix="/api/v1/users")
@@ -84,3 +84,21 @@ def get_user_kbs(user_id):
 def set_user_kbs(user_id):
     data = load_body(UserKbAssignSchema())
     return success(user_kb_service.set_user_kbs(current_user(), user_id, data["kb_ids"]))
+
+
+# ── Chat User access tokens ───────────────────────────────────
+@bp.post("/<user_id>/token")
+@admin_only
+def generate_user_token(user_id):
+    """Generate (or regenerate) an access token for a Chat User.
+
+    Token claims / stored row: user_id, tenant_id, kb_ids (current assignment
+    snapshot). One active token per Chat User — calling again replaces it.
+    """
+    return success(user_token_service.generate_token(current_user(), user_id), status=201)
+
+
+@bp.get("/<user_id>/token")
+@admin_only
+def get_user_token(user_id):
+    return success(user_token_service.get_token(current_user(), user_id))

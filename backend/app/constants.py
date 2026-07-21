@@ -108,6 +108,7 @@ class AuditAction:
     KB_UNASSIGNED = "kb_unassigned"
     USER_KB_ASSIGNED = "user_kb_assigned"
     USER_KB_UNASSIGNED = "user_kb_unassigned"
+    USER_TOKEN_GENERATED = "user_token_generated"
     PROFILE_UPDATED = "profile_updated"
     PASSWORD_CHANGED = "password_changed"
     DOCUMENT_UPLOADED = "document_uploaded"

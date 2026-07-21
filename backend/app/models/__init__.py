@@ -10,6 +10,7 @@ from app.models.tenant import Tenant
 from app.models.usage_log import UsageLog
 from app.models.user import User
 from app.models.user_kb_assignment import UserKnowledgeBaseAssignment
+from app.models.user_token import UserToken
 from app.models.voice_setting import VoiceSetting
 
 __all__ = [
@@ -25,5 +26,6 @@ __all__ = [
     "UsageLog",
     "User",
     "UserKnowledgeBaseAssignment",
+    "UserToken",
     "VoiceSetting",
 ]
