@@ -22,6 +22,10 @@ def _store_token(seed, kb_ids=None):
     return token
 
 
+def _headers(token: str) -> dict:
+    return {"X-Access-Token": token}
+
+
 def test_token_chat_success(client, seed, monkeypatch):
     token = _store_token(seed)
     monkeypatch.setattr(
@@ -45,7 +49,8 @@ def test_token_chat_success(client, seed, monkeypatch):
 
     resp = client.post(
         "/api/v1/token-chat",
-        json={"token": token, "session_id": "sess-1", "query": "What is leave policy?"},
+        headers=_headers(token),
+        json={"session_id": "sess-1", "query": "What is leave policy?"},
     )
     assert resp.status_code == 200
     data = resp.get_json()["data"]
@@ -82,7 +87,8 @@ def test_token_chat_passes_session_id_as_request_id(client, seed, monkeypatch):
 
     client.post(
         "/api/v1/token-chat",
-        json={"token": token, "session_id": "conv-abc", "query": "hello"},
+        headers=_headers(token),
+        json={"session_id": "conv-abc", "query": "hello"},
     )
     assert seen["request_id"] == "conv-abc"
     assert seen["tenant_id"] == seed["tenant_a"]
@@ -94,10 +100,19 @@ def test_token_chat_passes_session_id_as_request_id(client, seed, monkeypatch):
 def test_token_chat_rejects_invalid_token(client, seed):
     resp = client.post(
         "/api/v1/token-chat",
-        json={"token": "b" * 32, "session_id": "s1", "query": "hi"},
+        headers=_headers("b" * 32),
+        json={"session_id": "s1", "query": "hi"},
     )
     assert resp.status_code == 401
     assert resp.get_json()["error"]["code"] == "unauthorized"
+
+
+def test_token_chat_rejects_missing_header(client, seed):
+    resp = client.post(
+        "/api/v1/token-chat",
+        json={"session_id": "s1", "query": "hi"},
+    )
+    assert resp.status_code == 401
 
 
 def test_token_chat_no_queryable_kbs(client, seed, monkeypatch):
@@ -108,7 +123,8 @@ def test_token_chat_no_queryable_kbs(client, seed, monkeypatch):
     )
     resp = client.post(
         "/api/v1/token-chat",
-        json={"token": token, "session_id": "s1", "query": "hi"},
+        headers=_headers(token),
+        json={"session_id": "s1", "query": "hi"},
     )
     assert resp.status_code == 200
     assert "not ready" in resp.get_json()["data"]["answer"].lower()
