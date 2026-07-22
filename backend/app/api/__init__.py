@@ -13,10 +13,11 @@ def register_blueprints(app) -> None:
     from app.api.knowledge_bases.routes import bp as kb_bp
     from app.api.profile.routes import bp as profile_bp
     from app.api.tenants.routes import bp as tenants_bp
+    from app.api.token_chat.routes import bp as token_chat_bp
     from app.api.users.routes import bp as users_bp
     from app.api.voice_settings.routes import bp as voice_bp
 
     for bp in (auth_bp, tenants_bp, users_bp, kb_bp, documents_bp, chat_bp,
                conversations_bp, analytics_bp, audit_bp, assignments_bp, profile_bp,
-               voice_bp):
+               voice_bp, token_chat_bp):
         app.register_blueprint(bp)
