@@ -29,7 +29,7 @@ def list_users():
     items, total = user_service.list_users(
         scope, page, per_page, request.args.get("search"), request.args.get("role")
     )
-    return paginated([u.to_dict() for u in items], page, per_page, total)
+    return paginated(user_service.users_to_dict_with_tokens(items), page, per_page, total)
 
 
 @bp.post("")

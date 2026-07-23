@@ -25,6 +25,24 @@ def list_users(tenant_id: str | None, page: int, per_page: int, search: str | No
     return items, total
 
 
+def users_to_dict_with_tokens(users: list[User]) -> list[dict]:
+    """Serialize users and attach each Chat User's stored access token (if any)."""
+    if not users:
+        return []
+    from app.models.user_token import UserToken
+
+    token_by_user = {
+        row.user_id: row.token
+        for row in UserToken.query.filter(UserToken.user_id.in_([u.id for u in users])).all()
+    }
+    result = []
+    for user in users:
+        data = user.to_dict()
+        data["token"] = token_by_user.get(user.id)
+        result.append(data)
+    return result
+
+
 def get_user(user_id: str) -> User:
     user = User.query.get(user_id)
     if not user or user.deleted_at is not None:

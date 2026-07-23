@@ -67,3 +67,17 @@ def test_tenant_admin_cannot_token_other_tenant_user(client, auth, seed):
 def test_chat_user_cannot_generate_token(client, auth, seed):
     resp = client.post(f"/api/v1/users/{seed['user_a']}/token", headers=auth("user_a@x.com"))
     assert resp.status_code == 403
+
+
+def test_list_users_includes_stored_token(client, auth, seed):
+    created = client.post(f"/api/v1/users/{seed['user_a']}/token", headers=auth("admin_a@x.com"))
+    assert created.status_code == 201
+    token = created.get_json()["data"]["token"]
+
+    resp = client.get("/api/v1/users?page=1", headers=auth("admin_a@x.com"))
+    assert resp.status_code == 200
+    users = resp.get_json()["data"]
+    chat_user = next(u for u in users if u["id"] == seed["user_a"])
+    assert chat_user["token"] == token
+    admin = next(u for u in users if u["id"] == seed["admin_a"])
+    assert admin["token"] is None
