@@ -8,7 +8,6 @@ import {
   patchData,
   postData,
   putData,
-  tokenStore,
 } from "./client";
 import type {
   AdminVoiceSettings,
@@ -47,11 +46,10 @@ export interface ListParams {
 // ── Auth ──────────────────────────────────────────────────────
 export const authApi = {
   async login(email: string, password: string) {
-    const data = await postData<{ access_token: string; refresh_token: string; user: User }>(
+    const data = await postData<{ user: User }>(
       `${V1}/auth/login`,
       { email, password },
     );
-    tokenStore.set(data.access_token, data.refresh_token);
     return data.user;
   },
   async me() {
@@ -61,7 +59,6 @@ export const authApi = {
     try {
       await postData(`${V1}/auth/logout`);
     } finally {
-      tokenStore.clear();
     }
   },
 };

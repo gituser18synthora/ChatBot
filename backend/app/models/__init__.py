@@ -1,5 +1,6 @@
 """Import all models so SQLAlchemy/Alembic can discover them."""
 from app.models.audit_log import AuditLog
+from app.models.auth_session import AuthSession, RefreshToken
 from app.models.chat_message import ChatMessage
 from app.models.chat_session import ChatSession, ChatSessionKnowledgeBase
 from app.models.chat_source import ChatSource
@@ -15,6 +16,7 @@ from app.models.voice_setting import VoiceSetting
 
 __all__ = [
     "AuditLog",
+    "AuthSession",
     "ChatMessage",
     "ChatSession",
     "ChatSessionKnowledgeBase",
@@ -27,5 +29,6 @@ __all__ = [
     "User",
     "UserKnowledgeBaseAssignment",
     "UserToken",
+    "RefreshToken",
     "VoiceSetting",
 ]

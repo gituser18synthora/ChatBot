@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from flask import Flask, g, request
 from flask_cors import CORS
 
-from app.config import Config, get_config
+from app.config import Config, get_config, validate_auth_config
 from app.extensions import db, jwt, migrate, redis_client
 from app.utils.logging_utils import configure_logging, get_request_id, set_request_id
 
@@ -14,16 +15,17 @@ from app.utils.logging_utils import configure_logging, get_request_id, set_reque
 def create_app(config: type[Config] | None = None) -> Flask:
     app = Flask(__name__)
     app.config.from_object(config or get_config())
+    validate_auth_config(app.config)
 
     configure_logging(app.config["LOG_LEVEL"], app.config["LOG_JSON"])
 
     # ── Extensions ────────────────────────────────────────────
     db.init_app(app)
-    migrate.init_app(app, db)
+    migrate.init_app(app, db, directory=str(Path(__file__).resolve().parents[1] / "migrations"))
     jwt.init_app(app)
     if not app.config.get("TESTING"):
         redis_client.init_app(app)
-    CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
+    CORS(app, resources={r"/api/*": {"origins": app.config.get("CORS_ORIGINS", "*")}}, supports_credentials=True)
 
     _register_jwt_callbacks()
     _register_request_hooks(app)
@@ -31,8 +33,10 @@ def create_app(config: type[Config] | None = None) -> Flask:
     from app.api import register_blueprints
     from app.commands import register_commands
     from app.middleware.error_handler import register_error_handlers
+    from app.middleware.security_middleware import register_security_middleware
 
     register_blueprints(app)
+    register_security_middleware(app)
     register_error_handlers(app)
     register_commands(app)
 

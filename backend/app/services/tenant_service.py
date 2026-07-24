@@ -10,7 +10,7 @@ from app.constants import AuditAction, Role, TenantStatus
 from app.extensions import db
 from app.models.tenant import Tenant
 from app.models.user import User
-from app.services import audit_service
+from app.services import audit_service, auth_service
 from app.utils.response_utils import conflict, not_found, validation_error
 
 
@@ -83,8 +83,7 @@ def create_tenant(data: dict, actor_id: str) -> tuple[Tenant, User | None]:
     # Reject a duplicate admin email up front so we never create the tenant and
     # then fail to attach its login (which would leave a loginless tenant).
     if admin_email:
-        if not admin_password or len(admin_password) < 8:
-            raise validation_error("The tenant admin password must be at least 8 characters.")
+        auth_service.validate_password_strength(admin_password)
         if User.query.filter_by(email=admin_email).first():
             raise conflict("A user with this admin email already exists. Please use a different email.")
 

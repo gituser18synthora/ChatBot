@@ -1,25 +1,33 @@
 import axios, { AxiosError, AxiosInstance } from "axios";
 import type { ApiEnvelope, PageMeta, Paginated } from "./types";
 
-const ACCESS_KEY = "cb_access_token";
-const REFRESH_KEY = "cb_refresh_token";
+const CSRF_COOKIE = "cb_csrf";
 
 export const tokenStore = {
   get access() {
-    return localStorage.getItem(ACCESS_KEY);
+    return null;
   },
   get refresh() {
-    return localStorage.getItem(REFRESH_KEY);
+    return null;
   },
-  set(access: string, refresh?: string) {
-    localStorage.setItem(ACCESS_KEY, access);
-    if (refresh) localStorage.setItem(REFRESH_KEY, refresh);
+  set(_access?: string, _refresh?: string) {
+    // Auth tokens are HttpOnly cookies; the frontend never stores them.
   },
   clear() {
-    localStorage.removeItem(ACCESS_KEY);
-    localStorage.removeItem(REFRESH_KEY);
+    localStorage.removeItem("cb_access_token");
+    localStorage.removeItem("cb_refresh_token");
   },
 };
+
+function readCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const prefix = `${name}=`;
+  return document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(prefix))
+    ?.slice(prefix.length) ?? null;
+}
 
 /** A normalized, frontend-safe error. `message` is always safe to display. */
 export class ApiRequestError extends Error {
@@ -37,11 +45,15 @@ const baseURL = import.meta.env.VITE_API_BASE_URL || "";
 export const http: AxiosInstance = axios.create({
   baseURL,
   headers: { "Content-Type": "application/json" },
+  withCredentials: true,
 });
 
 http.interceptors.request.use((config) => {
-  const token = tokenStore.access;
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  const csrf = readCookie(CSRF_COOKIE);
+  const method = (config.method || "get").toUpperCase();
+  if (csrf && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    config.headers["X-CSRF-Token"] = csrf;
+  }
   // For file uploads, strip the JSON default so the browser sets
   // `multipart/form-data; boundary=…` itself (a boundary-less header is unparsable).
   if (typeof FormData !== "undefined" && config.data instanceof FormData) {
@@ -51,24 +63,22 @@ http.interceptors.request.use((config) => {
 });
 
 // Single-flight refresh so concurrent 401s don't stampede the refresh endpoint.
-let refreshing: Promise<string | null> | null = null;
+let refreshing: Promise<boolean> | null = null;
 
-async function tryRefresh(): Promise<string | null> {
-  const refresh = tokenStore.refresh;
-  if (!refresh) return null;
+async function tryRefresh(): Promise<boolean> {
+  const csrf = readCookie(CSRF_COOKIE);
   try {
-    const resp = await axios.post<ApiEnvelope<{ access_token: string }>>(
+    await axios.post(
       `${baseURL}/api/v1/auth/refresh`,
       {},
-      { headers: { Authorization: `Bearer ${refresh}` } },
+      { withCredentials: true, headers: csrf ? { "X-CSRF-Token": csrf } : undefined },
     );
-    const token = resp.data.data.access_token;
-    tokenStore.set(token);
-    return token;
+    return true;
   } catch {
-    return null;
+    return false;
   }
 }
+
 
 http.interceptors.response.use(
   (r) => r,
@@ -80,11 +90,9 @@ http.interceptors.response.use(
     if (status === 401 && original && !original._retried && !isAuthCall) {
       original._retried = true;
       refreshing = refreshing || tryRefresh();
-      const newToken = await refreshing;
+      const refreshed = await refreshing;
       refreshing = null;
-      if (newToken) {
-        original.headers = original.headers ?? {};
-        original.headers.Authorization = `Bearer ${newToken}`;
+      if (refreshed) {
         return http(original);
       }
       // Refresh failed — force logout.

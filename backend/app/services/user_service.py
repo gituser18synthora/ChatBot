@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from app.constants import AuditAction, Role
 from app.extensions import db
 from app.models.user import User
-from app.services import audit_service
+from app.services import audit_service, auth_service
 from app.utils.response_utils import ApiError, conflict, forbidden, not_found, validation_error
 
 
@@ -103,6 +103,8 @@ def create_user(actor: User, data: dict) -> User:
         if any(k not in selectable for k in kb_ids):
             raise forbidden("One or more selected knowledge bases are not available to this tenant.")
 
+    auth_service.validate_password_strength(data["password"])
+
     user = User(
         tenant_id=tenant_id,
         name=data["name"],
@@ -148,6 +150,7 @@ def update_user(actor: User, user_id: str, data: dict) -> User:
     if "name" in data and data["name"]:
         user.name = data["name"]
     if "password" in data and data["password"]:
+        auth_service.validate_password_strength(data["password"])
         user.set_password(data["password"])
     if "role" in data and data["role"] and actor.role == Role.SUPER_ADMIN:
         user.role = data["role"]

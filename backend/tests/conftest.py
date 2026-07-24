@@ -85,13 +85,21 @@ def seed(app):
 def _login(client, email, password="password123"):
     resp = client.post("/api/v1/auth/login", json={"email": email, "password": password})
     assert resp.status_code == 200, resp.get_json()
-    return resp.get_json()["data"]["access_token"]
+    csrf = client.get_cookie("cb_csrf")
+    access = client.get_cookie("cb_access")
+    return {"csrf": csrf.value if csrf else "", "access": access.value if access else ""}
 
 
 @pytest.fixture()
 def auth(client, seed):
     def _headers(email):
-        return {"Authorization": f"Bearer {_login(client, email)}"}
+        tokens = _login(client, email)
+        headers = {}
+        if tokens["access"]:
+            headers["Authorization"] = "Bearer " + tokens["access"]
+        if tokens["csrf"]:
+            headers["X-CSRF-Token"] = tokens["csrf"]
+        return headers
     return _headers
 
 
