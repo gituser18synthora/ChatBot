@@ -111,12 +111,6 @@ export const Icon = {
       <path d="M20 4v4h-4" />
     </svg>
   ),
-  Copy: (p: P) => (
-    <svg {...base(p)}>
-      <rect x="9" y="9" width="11" height="11" rx="2" />
-      <path d="M5 15V5a2 2 0 0 1 2-2h8" />
-    </svg>
-  ),
   Send: (p: P) => (
     <svg {...base(p)}>
       <path d="M4 12l16-8-6 16-3-6-7-2z" />

@@ -13,7 +13,7 @@ import { Badge, Spinner } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/Icons";
 import { cn, formatDate } from "@/lib/utils";
 import type { Role, SelectableKb, User } from "@/api/types";
-import { ShieldBan } from "lucide-react";
+import { Copy, KeyRound, ShieldBan } from "lucide-react";
 import InputField from "@/components/common/InputField";
 
 export function UsersPage() {
@@ -47,7 +47,25 @@ export function UsersPage() {
     }
   };
 
-  // Super Users may delete anyone (but themselves); Tenant Admins only Chat Users.
+  const generateToken = async (u: User) => {
+    try {
+      await userApi.generateToken(u.id);
+      toast.success("Access token generated.");
+      list.reload();
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
+
+  const copyToken = async (token: string) => {
+    try {
+      await navigator.clipboard.writeText(token);
+      toast.success("Token copied.");
+    } catch {
+      toast.error("Could not copy token.");
+    }
+  };
+
   const canDelete = (u: User) =>
     u.id !== me?.id && (isSuperAdmin || u.role === "chat_user");
 
@@ -88,6 +106,26 @@ export function UsersPage() {
       className: "text-left w-1",
       cell: (u) => (
         <div className="flex justify-end gap-1">
+          {u.role === "chat_user" && u.token === null && (
+            <button
+              className="btn-ghost rounded-lg p-2"
+              onClick={() => generateToken(u)}
+              aria-label="Generate token"
+              title="Generate token"
+            >
+              <KeyRound className="w-4 h-4" />
+            </button>
+          )}
+          {u.role === "chat_user" && u.token && (
+            <button
+              className="btn-ghost rounded-lg p-2"
+              onClick={() => copyToken(u.token!)}
+              aria-label="Copy token"
+              title="Copy token"
+            >
+              <Copy className="w-4 h-4" />
+            </button>
+          )}
           {/* KB assignment is a Chat User concept: admins always use all tenant KBs. */}
           {u.role === "chat_user" && u.tenant_id && (
             <button
