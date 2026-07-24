@@ -30,7 +30,6 @@ export interface User {
   is_active: boolean;
   last_login_at: string | null;
   created_at?: string;
-  /** Opaque Chat User access token, when one has been issued. */
   token?: string | null;
 }
 
