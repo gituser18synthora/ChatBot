@@ -107,6 +107,7 @@ export const userApi = {
   setStatus: (id: string, is_active: boolean) =>
     patchData<User>(`${V1}/users/${id}/status`, { is_active }),
   remove: (id: string) => deleteData(`${V1}/users/${id}`),
+  generateToken: (id: string) => postData(`${V1}/users/${id}/token`),
   // Per-user Knowledge Base scoping.
   getKbs: (id: string) => getData<UserKbAccess>(`${V1}/users/${id}/knowledge-bases`),
   setKbs: (id: string, kb_ids: string[]) =>

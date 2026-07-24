@@ -30,6 +30,7 @@ export interface User {
   is_active: boolean;
   last_login_at: string | null;
   created_at?: string;
+  token?: string | null;
 }
 
 // Tenant answering policy: rag_first allows general AI for clearly general
